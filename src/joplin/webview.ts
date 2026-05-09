@@ -58,13 +58,12 @@ function renderJoplinNote(container: HTMLElement, node: CanvasFileNode): void {
 }
 
 function handleJoplinNoteClick(node: CanvasFileNode): void {
-	if (!titles[node.id]) {
-		// No resolved title => the ref isn't a note we know about (likely a
-		// resource id). Resource handling is a separate slice; ignore here.
-		console.debug('Canvas: clicked file ref without resolved title', node.file);
-		return;
-	}
-	void webviewApi.postMessage({ type: 'requestOpen', noteId: parseNoteRef(node.file)! });
+	// Pass the bare `:/<id>` to the host. Joplin's openItem routes notes
+	// and resources through the same path, so we don't need to discriminate
+	// here — a resource click opens the resource viewer, a note click opens
+	// the note. Inline image rendering for resources is a separate slice
+	// (#12).
+	void webviewApi.postMessage({ type: 'openItem', link: node.file });
 }
 
 function isLoadMessage(value: unknown): value is LoadMessage {

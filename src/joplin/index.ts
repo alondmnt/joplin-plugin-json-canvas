@@ -75,8 +75,9 @@ async function loadFromCurrentNote(handle: ViewHandle): Promise<void> {
 async function fetchNoteTitles(canvas: JSONCanvas): Promise<Record<string, string>> {
 	// Joplin uses the same `:/<32-hex>` shape for both notes and resources.
 	// We probe via `data.get(['notes', id])` and only keep entries that resolve;
-	// a resource id throws a 404 and is silently dropped, leaving the webview
-	// to render a placeholder and short-circuit clicks.
+	// a resource id throws a 404 and is silently dropped, so the webview
+	// falls back to the bare id for display. (Click routing is unaffected —
+	// openItem on the host handles both notes and resources.)
 	const lookups: Array<Promise<[string, string] | null>> = [];
 	for (const node of canvas.nodes) {
 		if (node.type !== 'file') continue;
@@ -121,8 +122,12 @@ function handleMessage(handle: ViewHandle, message: unknown): void {
 		return;
 	}
 
-	if (m.type === 'requestOpen' && typeof (m as { noteId?: unknown }).noteId === 'string') {
-		void joplin.commands.execute('openNote', (m as { noteId: string }).noteId);
+	if (m.type === 'openItem' && typeof (m as { link?: unknown }).link === 'string') {
+		// Joplin's openItem routes notes (`:/<id>`), resources (`:/<id>`),
+		// and external URLs (`http(s)://...`) through one entry point; the
+		// webview validates the shape so we don't surface Joplin's error
+		// dialog for canvas-author typos.
+		void joplin.commands.execute('openItem', (m as { link: string }).link);
 		return;
 	}
 }
