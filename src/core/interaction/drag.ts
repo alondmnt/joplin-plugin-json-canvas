@@ -14,10 +14,12 @@
 import type { CanvasNode } from '../types';
 
 export interface DragHandlerOptions {
-	/** Look up the current canonical node for hit-tested overlay id. */
+	/** Look up the current canonical node for the hit-tested overlay id. */
 	getNode: (id: string) => CanvasNode | null;
-	/** Fired on drag-end with the new canvas-space position. */
+	/** Fires on every pointermove during a drag. Use for visual sync. */
 	onMove: (id: string, newX: number, newY: number) => void;
+	/** Fires once on drag-end. Use for committing canonical state (save). */
+	onCommit: (id: string, newX: number, newY: number) => void;
 }
 
 interface DragState {
@@ -58,8 +60,11 @@ export function attachDragHandler(options: DragHandlerOptions): () => void {
 		const dx = (e.clientX - drag.startClientX) / scale;
 		const dy = (e.clientY - drag.startClientY) / scale;
 		if (Math.abs(dx) + Math.abs(dy) > 2) drag.moved = true;
-		drag.overlay.style.left = `${drag.startNodeX + dx}px`;
-		drag.overlay.style.top = `${drag.startNodeY + dy}px`;
+		const newX = drag.startNodeX + dx;
+		const newY = drag.startNodeY + dy;
+		drag.overlay.style.left = `${newX}px`;
+		drag.overlay.style.top = `${newY}px`;
+		options.onMove(drag.nodeId, newX, newY);
 		e.stopPropagation();
 	};
 
@@ -68,7 +73,7 @@ export function attachDragHandler(options: DragHandlerOptions): () => void {
 		if (drag.moved) {
 			const newX = parseFloat(drag.overlay.style.left);
 			const newY = parseFloat(drag.overlay.style.top);
-			options.onMove(drag.nodeId, newX, newY);
+			options.onCommit(drag.nodeId, newX, newY);
 		}
 		drag = null;
 	};

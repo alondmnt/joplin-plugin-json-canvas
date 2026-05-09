@@ -17,6 +17,7 @@ export interface CanvasViewOptions {
 export class CanvasView {
 	private viewer: JSONCanvasViewerInterface;
 	private canvas: JSONCanvas | null = null;
+	private rafId: number | null = null;
 	private readonly detachDrag: () => void;
 	private readonly onChange: (canvas: JSONCanvas) => void;
 
@@ -29,7 +30,8 @@ export class CanvasView {
 		this.onChange = options.onChange ?? ((): void => {});
 		this.detachDrag = attachDragHandler({
 			getNode: (id) => this.getNode(id),
-			onMove: (id, x, y) => this.handleNodeMove(id, x, y),
+			onMove: (id, x, y) => this.handleNodeMoveLive(id, x, y),
+			onCommit: () => this.handleNodeCommit(),
 		});
 	}
 
@@ -40,6 +42,7 @@ export class CanvasView {
 
 	destroy(): void {
 		this.detachDrag();
+		if (this.rafId !== null) cancelAnimationFrame(this.rafId);
 		this.viewer.dispose();
 	}
 
@@ -48,21 +51,38 @@ export class CanvasView {
 		return this.canvas.nodes.find((n) => n.id === id) ?? null;
 	}
 
-	private handleNodeMove(id: string, newX: number, newY: number): void {
+	private handleNodeMoveLive(id: string, newX: number, newY: number): void {
+		// Mutate the canonical node ref. Hesprs's renderer reads node positions
+		// directly from `nodeMap[id].ref.x/y` (the same object reference as
+		// our canvas.nodes[i]), so this update is immediately visible to
+		// drawEdge. Triggering viewer.refresh() — not viewer.load() — redraws
+		// only the canvas-side layer (edges, file/group nodes) without the
+		// resetView/overlay-rebuild that load() would do.
+		//
+		// The overlay div for the dragged node is moved by the drag handler's
+		// style.left/top mutation; we don't touch it here.
 		if (!this.canvas) return;
 		const node = this.canvas.nodes.find((n) => n.id === id);
 		if (!node) return;
 		node.x = newX;
 		node.y = newY;
-		// Don't re-load the viewer here. viewer.load triggers hesprs's start()
-		// which calls resetView() — that clobbers the user's pan/zoom state and
-		// races the async markdown re-rendering of all overlays, sometimes
-		// leaving the canvas visually blank. Edges therefore stay anchored to
-		// their pre-drag positions until the next external load (note switch
-		// or restart). Edges-during-drag will be a follow-up slice using the
-		// private DM.data.nodeMap[id].box mutation + refresh() path documented
-		// in ADR 0001 and phase0b-drag-spike.md.
+		this.scheduleRefresh();
+	}
+
+	private handleNodeCommit(): void {
+		// Position was already mutated by handleNodeMoveLive on the final
+		// pointermove. Drag-end's job is to fire the change callback so the
+		// host saves; canonical state is already correct.
+		if (!this.canvas) return;
 		this.onChange(this.canvas);
+	}
+
+	private scheduleRefresh(): void {
+		if (this.rafId !== null) return;
+		this.rafId = requestAnimationFrame(() => {
+			this.rafId = null;
+			this.viewer.refresh();
+		});
 	}
 }
 
