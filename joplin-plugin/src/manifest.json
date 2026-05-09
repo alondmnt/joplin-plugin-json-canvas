@@ -1,0 +1,16 @@
+{
+  "manifest_version": 1,
+  "id": "org.joplinapp.plugins.js-canvas-spike",
+  "app_min_version": "3.6",
+  "version": "0.0.1",
+  "name": "js-canvas spike",
+  "description": "Phase 0c spike: load hesprs/json-canvas-viewer inside a Joplin editor webview to validate the substrate works in the target environment.",
+  "author": "alon",
+  "homepage_url": "",
+  "repository_url": "",
+  "keywords": [],
+  "categories": ["editor"],
+  "screenshots": [],
+  "icons": {},
+  "promo_tile": {}
+}
