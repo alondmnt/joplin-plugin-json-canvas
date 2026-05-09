@@ -8,7 +8,6 @@ interface EditorState {
 	currentBody: string;
 	blockSpan: BlockSpan | null;
 	webviewReady: boolean;
-	pendingCanvas: JSONCanvas | null;
 }
 
 const editorState = new Map<ViewHandle, EditorState>();
@@ -22,7 +21,6 @@ joplin.plugins.register({
 					currentBody: '',
 					blockSpan: null,
 					webviewReady: false,
-					pendingCanvas: null,
 				});
 
 				await joplin.views.editors.setHtml(handle, '<div id="root"></div>');
@@ -64,14 +62,11 @@ async function loadFromCurrentNote(handle: ViewHandle): Promise<void> {
 	state.currentBody = noteRecord.body;
 	state.blockSpan = parsed.blockSpan;
 
-	if (state.webviewReady) {
-		await joplin.views.editors.postMessage(handle, {
-			type: 'load',
-			canvas: parsed.canvas,
-		});
-	} else {
-		state.pendingCanvas = parsed.canvas;
-	}
+	if (!state.webviewReady) return;
+	await joplin.views.editors.postMessage(handle, {
+		type: 'load',
+		canvas: parsed.canvas,
+	});
 }
 
 function handleMessage(handle: ViewHandle, message: unknown): void {
@@ -81,14 +76,13 @@ function handleMessage(handle: ViewHandle, message: unknown): void {
 	const m = message as { type?: unknown; canvas?: unknown };
 
 	if (m.type === 'ready') {
+		// Re-fetch and post on every ready, not just the first one. Joplin can
+		// destroy and recreate the webview iframe on Canvas/Markdown editor
+		// toggles — a fresh iframe sends `ready` again and needs the current
+		// canvas posted to its new onMessage handler. Idempotent in the
+		// iframe-stays-alive case (a redundant data.get).
 		state.webviewReady = true;
-		if (state.pendingCanvas) {
-			void joplin.views.editors.postMessage(handle, {
-				type: 'load',
-				canvas: state.pendingCanvas,
-			});
-			state.pendingCanvas = null;
-		}
+		void loadFromCurrentNote(handle);
 		return;
 	}
 
