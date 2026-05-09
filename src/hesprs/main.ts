@@ -86,73 +86,78 @@ const findOverlay = (target: EventTarget | null): HTMLElement | null => {
   return null;
 };
 
-// Bind on the document so we catch overlays even after viewer.load() rebuilds them.
-// In a real implementation we'd register a BaseModule and bind on the overlays layer.
-document.addEventListener('pointerdown', (e) => {
-  const overlay = findOverlay(e.target);
-  if (!overlay) return;
-  const id = overlay.id;
-  const node = doc.nodes.find((n) => n.id === id);
-  if (!node) return;
+// Bind in capture phase so we run BEFORE pointeract (which listens on the container
+// during bubble). When we claim a node drag, stopPropagation prevents pointeract from
+// also starting a pan. In a real BaseModule extension we'd bind to a more specific
+// element, but capture-on-document is the correct primitive for a spike.
+document.addEventListener(
+  'pointerdown',
+  (e) => {
+    const overlay = findOverlay(e.target);
+    if (!overlay) return;
+    const id = overlay.id;
+    const node = doc.nodes.find((n) => n.id === id);
+    if (!node) return;
 
-  drag = {
-    nodeId: id,
-    overlay,
-    startClientX: e.clientX,
-    startClientY: e.clientY,
-    startNodeX: node.x,
-    startNodeY: node.y,
-    moved: false,
-  };
-  // We don't preventDefault — let hesprs's selection still fire on click.
-});
+    drag = {
+      nodeId: id,
+      overlay,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      startNodeX: node.x,
+      startNodeY: node.y,
+      moved: false,
+    };
+    // Claim the gesture: stop propagation so pointeract doesn't also start a pan.
+    e.stopPropagation();
+  },
+  { capture: true },
+);
 
-document.addEventListener('pointermove', (e) => {
-  if (!drag) return;
-  // Reach into viewer for current scale (private API, fine for spike).
-  const scale = readScale(viewer);
-  const dx = (e.clientX - drag.startClientX) / scale;
-  const dy = (e.clientY - drag.startClientY) / scale;
-  if (Math.abs(dx) + Math.abs(dy) > 2) drag.moved = true;
-  const newX = drag.startNodeX + dx;
-  const newY = drag.startNodeY + dy;
-  drag.overlay.style.left = `${newX}px`;
-  drag.overlay.style.top = `${newY}px`;
-});
+document.addEventListener(
+  'pointermove',
+  (e) => {
+    if (!drag) return;
+    const scale = readScale();
+    const dx = (e.clientX - drag.startClientX) / scale;
+    const dy = (e.clientY - drag.startClientY) / scale;
+    if (Math.abs(dx) + Math.abs(dy) > 2) drag.moved = true;
+    drag.overlay.style.left = `${drag.startNodeX + dx}px`;
+    drag.overlay.style.top = `${drag.startNodeY + dy}px`;
+    e.stopPropagation();
+  },
+  { capture: true },
+);
 
-document.addEventListener('pointerup', () => {
-  if (!drag) return;
-  if (drag.moved) {
-    const node = doc.nodes.find((n) => n.id === drag!.nodeId);
-    if (node) {
-      node.x = parseFloat(drag.overlay.style.left);
-      node.y = parseFloat(drag.overlay.style.top);
+document.addEventListener(
+  'pointerup',
+  () => {
+    if (!drag) return;
+    if (drag.moved) {
+      const node = doc.nodes.find((n) => n.id === drag!.nodeId);
+      if (node) {
+        node.x = parseFloat(drag.overlay.style.left);
+        node.y = parseFloat(drag.overlay.style.top);
+      }
+      // Full reload so canvas-side edges follow. refresh() alone would redraw
+      // edges from the loaded snapshot's box positions — wrong. load() rebuilds
+      // overlays + recomputes node bounds, so edges connect correctly.
+      const t0 = performance.now();
+      viewer.load({ canvas: doc });
+      const dt = performance.now() - t0;
+      lastLoadMs = dt;
+      console.log(`[spike] viewer.load() at ${doc.nodes.length} nodes: ${dt.toFixed(1)} ms`);
     }
-    // Full reload so canvas-side edges follow. refresh() alone would redraw
-    // edges from the loaded snapshot's box positions — wrong. load() rebuilds
-    // overlays + recomputes node bounds, so edges connect correctly to the
-    // post-drag positions.
-    const t0 = performance.now();
-    viewer.load({ canvas: doc });
-    const dt = performance.now() - t0;
-    lastLoadMs = dt;
-    console.log(`[spike] viewer.load() at ${doc.nodes.length} nodes: ${dt.toFixed(1)} ms`);
-  }
-  drag = null;
-});
+    drag = null;
+  },
+  { capture: true },
+);
 
 let lastLoadMs = 0;
 
-function readScale(v: unknown): number {
-  // The DataManager is registered in the DI container; data.scale lives there.
-  // We poke at known internal shape — fragile, but acceptable for a spike.
-  type DM = { data?: { scale?: number } };
-  const candidate = (v as { container?: { get?: (...a: unknown[]) => DM } }).container?.get?.(
-    // We don't have a handle to the DataManager class here, so try a pragmatic fallback:
-    // read the transform from the overlays-layer DOM and derive the scale.
-  );
-  const dmScale = candidate?.data?.scale;
-  if (typeof dmScale === 'number') return dmScale;
+function readScale(): number {
+  // Derive scale from the overlay-layer's CSS transform — set by hesprs on every
+  // pan/zoom and observable from the DOM without touching private APIs.
   const layer = document.querySelector('.JCV-overlays') as HTMLElement | null;
   if (!layer) return 1;
   const m = /scale\(([0-9.]+)\)/.exec(layer.style.transform);
