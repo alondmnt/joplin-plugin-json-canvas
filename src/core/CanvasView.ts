@@ -1,43 +1,87 @@
 // CanvasView wraps hesprs/json-canvas-viewer with a markdown-it parser and our
 // own narrower API. It owns the canvas data reference at the rendering layer
 // and emits a change event when the user mutates it (currently only drag).
+//
+// Custom file overlays
+// --------------------
+// hesprs dispatches file-typed nodes to its `markdown`/`image`/`audio`/`video`
+// component slots by file-extension regex. Joplin link refs (`:/<id>`) have
+// no extension and would never match, so they would render as empty space
+// without us intervening. The `fileRenderer` option lets a host (the Joplin
+// webview) take over rendering for any file ref it claims; CanvasView fakes
+// a synthetic `.md` extension on the ref so hesprs's regex routes it to our
+// markdown override, which then delegates to the host's renderer. The synth
+// extension is applied to a *viewer-side* copy of the canvas so the
+// canonical canvas (the one we save) stays clean.
 
 import { JSONCanvasViewer } from 'json-canvas-viewer';
 import type { JSONCanvasViewerInterface } from 'json-canvas-viewer';
 import MarkdownIt from 'markdown-it';
 import { attachDragHandler } from './interaction/drag';
-import type { CanvasNode, JSONCanvas } from './types';
+import type { CanvasFileNode, CanvasNode, JSONCanvas } from './types';
+
+const SYNTH_EXT = '.md';
+
+export interface FileRenderer {
+	/** Predicate over the original (un-synthesised) file ref. */
+	matches: (file: string) => boolean;
+	/** Render into the overlay's content container; receives the canonical node. */
+	render: (container: HTMLElement, node: CanvasFileNode) => void;
+	/** Click on a matching file node's overlay (no drag movement). */
+	onClick?: (node: CanvasFileNode) => void;
+}
 
 export interface CanvasViewOptions {
 	container: HTMLElement;
 	/** Called on drag-end with the mutated canvas. */
 	onChange?: (canvas: JSONCanvas) => void;
+	fileRenderer?: FileRenderer;
 }
 
 export class CanvasView {
 	private viewer: JSONCanvasViewerInterface;
 	private canvas: JSONCanvas | null = null;
+	// Mirror of `canvas` with synthetic extensions applied to file refs claimed
+	// by `fileRenderer`. Drag mutations are written to both copies so hesprs's
+	// edge-redraw (reading viewerCanvas.nodes[i].x/y) and our save path
+	// (reading canvas.nodes[i].x/y) stay in sync.
+	private viewerCanvas: JSONCanvas | null = null;
 	private rafId: number | null = null;
 	private readonly detachDrag: () => void;
 	private readonly onChange: (canvas: JSONCanvas) => void;
+	private readonly fileRenderer?: FileRenderer;
 
 	constructor(options: CanvasViewOptions) {
+		this.fileRenderer = options.fileRenderer;
 		const md = new MarkdownIt({ html: false, breaks: true, linkify: true });
 		this.viewer = new JSONCanvasViewer({
 			container: options.container,
 			parser: (text: string) => md.render(text),
-		});
+			// Joplin file refs (`:/<id>`) aren't filesystem paths, so we suppress
+			// hesprs's default `./<basename>` prefixing. Without this, hesprs
+			// would mutate `node.file` on load — a write to our canonical state.
+			noAttachmentRelocation: true,
+			...(this.fileRenderer
+				? {
+						nodeComponents: {
+							markdown: this.markdownComponent,
+						},
+					}
+				: {}),
+		} as never);
 		this.onChange = options.onChange ?? ((): void => {});
 		this.detachDrag = attachDragHandler({
 			getNode: (id) => this.getNode(id),
 			onMove: (id, x, y) => this.handleNodeMoveLive(id, x, y),
 			onCommit: () => this.handleNodeCommit(),
+			onClick: (id) => this.handleNodeClick(id),
 		});
 	}
 
 	load(canvas: JSONCanvas): void {
 		this.canvas = canvas;
-		this.viewer.load({ canvas: filledForHesprs(canvas) });
+		this.viewerCanvas = this.buildViewerCanvas(canvas);
+		this.viewer.load({ canvas: filledForHesprs(this.viewerCanvas) });
 	}
 
 	destroy(): void {
@@ -52,20 +96,25 @@ export class CanvasView {
 	}
 
 	private handleNodeMoveLive(id: string, newX: number, newY: number): void {
-		// Mutate the canonical node ref. Hesprs's renderer reads node positions
-		// directly from `nodeMap[id].ref.x/y` (the same object reference as
-		// our canvas.nodes[i]), so this update is immediately visible to
-		// drawEdge. Triggering viewer.refresh() — not viewer.load() — redraws
-		// only the canvas-side layer (edges, file/group nodes) without the
-		// resetView/overlay-rebuild that load() would do.
+		// Mutate both the canonical and viewer-side node refs. Hesprs's renderer
+		// reads node positions from `nodeMap[id].ref.x/y`, where `ref` points
+		// into viewerCanvas.nodes; the canonical copy is what we ship back to
+		// the host on commit. Triggering viewer.refresh() — not viewer.load() —
+		// redraws only the canvas-side layer (edges, file/group nodes) without
+		// the resetView/overlay-rebuild that load() would do.
 		//
 		// The overlay div for the dragged node is moved by the drag handler's
 		// style.left/top mutation; we don't touch it here.
-		if (!this.canvas) return;
+		if (!this.canvas || !this.viewerCanvas) return;
 		const node = this.canvas.nodes.find((n) => n.id === id);
+		const vnode = this.viewerCanvas.nodes.find((n) => n.id === id);
 		if (!node) return;
 		node.x = newX;
 		node.y = newY;
+		if (vnode) {
+			vnode.x = newX;
+			vnode.y = newY;
+		}
 		this.scheduleRefresh();
 	}
 
@@ -77,6 +126,19 @@ export class CanvasView {
 		this.onChange(this.canvas);
 	}
 
+	private handleNodeClick(id: string): void {
+		if (!this.canvas) return;
+		const node = this.canvas.nodes.find((n) => n.id === id);
+		if (!node || node.type !== 'file') return;
+		const renderer = this.fileRenderer;
+		if (!renderer) return;
+		if (!renderer.matches(node.file)) {
+			console.debug('Canvas: clicked file node with unrecognised ref:', node.file);
+			return;
+		}
+		renderer.onClick?.(node);
+	}
+
 	private scheduleRefresh(): void {
 		if (this.rafId !== null) return;
 		this.rafId = requestAnimationFrame(() => {
@@ -84,6 +146,48 @@ export class CanvasView {
 			this.viewer.refresh();
 		});
 	}
+
+	private buildViewerCanvas(canvas: JSONCanvas): JSONCanvas {
+		const renderer = this.fileRenderer;
+		if (!renderer) return canvas;
+		const nodes = canvas.nodes.map((node) => {
+			if (node.type === 'file' && renderer.matches(node.file)) {
+				return { ...node, file: node.file + SYNTH_EXT };
+			}
+			return node;
+		});
+		return { ...canvas, nodes };
+	}
+
+	private markdownComponent = ({
+		container,
+		content,
+		node,
+	}: {
+		container: HTMLElement;
+		content: string;
+		node: { id: string };
+	}): void => {
+		const renderer = this.fileRenderer;
+		if (!renderer) return;
+		const original = content.endsWith(SYNTH_EXT)
+			? content.slice(0, -SYNTH_EXT.length)
+			: content;
+		if (!renderer.matches(original)) {
+			// A genuine `.md` filesystem ref slipped through. Joplin canvases
+			// shouldn't contain these, but render the raw path as a fallback
+			// instead of leaving the overlay empty.
+			container.classList.add('JCV-markdown-content');
+			const inner = document.createElement('div');
+			inner.classList.add('JCV-parsed-content-wrapper');
+			inner.textContent = content;
+			container.appendChild(inner);
+			return;
+		}
+		const canon = this.canvas?.nodes.find((n) => n.id === node.id);
+		if (!canon || canon.type !== 'file') return;
+		renderer.render(container, canon);
+	};
 }
 
 function filledForHesprs(canvas: JSONCanvas): never {
