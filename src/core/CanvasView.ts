@@ -54,9 +54,14 @@ export class CanvasView {
 		if (!node) return;
 		node.x = newX;
 		node.y = newY;
-		// Full reload so canvas-side edges follow. Snap-on-release per Q-tracer
-		// scope; edges-during-drag is a v1 refinement (private box mutation).
-		this.viewer.load({ canvas: filledForHesprs(this.canvas) });
+		// Don't re-load the viewer here. viewer.load triggers hesprs's start()
+		// which calls resetView() — that clobbers the user's pan/zoom state and
+		// races the async markdown re-rendering of all overlays, sometimes
+		// leaving the canvas visually blank. Edges therefore stay anchored to
+		// their pre-drag positions until the next external load (note switch
+		// or restart). Edges-during-drag will be a follow-up slice using the
+		// private DM.data.nodeMap[id].box mutation + refresh() path documented
+		// in ADR 0001 and phase0b-drag-spike.md.
 		this.onChange(this.canvas);
 	}
 }
