@@ -21,7 +21,17 @@ let view: CanvasView | null = null;
 
 webviewApi.onMessage(({ message }) => {
 	if (!isLoadMessage(message)) return;
-	if (!view) view = new CanvasView({ container: root });
+	if (!view) {
+		view = new CanvasView({
+			container: root,
+			onChange: (canvas) => {
+				// Commit 6 will postMessage this back to the host as a 'change'.
+				// For commit 5 we just log so the drag is observable in devtools.
+				// eslint-disable-next-line no-console
+				console.log('[canvas] change', canvas);
+			},
+		});
+	}
 	view.load(message.canvas);
 });
 
