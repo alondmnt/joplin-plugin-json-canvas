@@ -1,5 +1,5 @@
 import joplin from 'api';
-import { bodyHasCanvasFence, parseFromBody } from '../core/format';
+import { bodyHasCanvasFence, parseFromBody, serializeToBody } from '../core/format';
 import type { ViewHandle } from 'api/types';
 import type { BlockSpan, JSONCanvas } from '../core/types';
 
@@ -76,9 +76,9 @@ function handleMessage(handle: ViewHandle, message: unknown): void {
 	const state = editorState.get(handle);
 	if (!state) return;
 	if (typeof message !== 'object' || message === null) return;
-	const { type } = message as { type?: unknown };
+	const m = message as { type?: unknown; canvas?: unknown };
 
-	if (type === 'ready') {
+	if (m.type === 'ready') {
 		state.webviewReady = true;
 		if (state.pendingCanvas) {
 			void joplin.views.editors.postMessage(handle, {
@@ -87,5 +87,34 @@ function handleMessage(handle: ViewHandle, message: unknown): void {
 			});
 			state.pendingCanvas = null;
 		}
+		return;
 	}
+
+	if (m.type === 'change' && isJSONCanvas(m.canvas)) {
+		void persistChange(handle, m.canvas);
+		return;
+	}
+}
+
+async function persistChange(handle: ViewHandle, canvas: JSONCanvas): Promise<void> {
+	const state = editorState.get(handle);
+	if (!state || !state.noteId || !state.blockSpan) return;
+
+	const newBody = serializeToBody(state.currentBody, state.blockSpan, canvas);
+	await joplin.views.editors.saveNote(handle, {
+		noteId: state.noteId,
+		body: newBody,
+	});
+
+	// JSON length changed → recompute blockSpan from the saved body so the
+	// next change writes the right slice.
+	state.currentBody = newBody;
+	const reparsed = parseFromBody(newBody);
+	if (reparsed) state.blockSpan = reparsed.blockSpan;
+}
+
+function isJSONCanvas(value: unknown): value is JSONCanvas {
+	if (typeof value !== 'object' || value === null) return false;
+	const obj = value as Record<string, unknown>;
+	return Array.isArray(obj.nodes);
 }
