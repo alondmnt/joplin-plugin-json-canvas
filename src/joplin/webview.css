@@ -22,7 +22,8 @@ body {
 	background: var(--joplin-background-color, #fafafa);
 }
 
-.JCV-joplin-note {
+.JCV-joplin-note,
+.JCV-link-pill {
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -38,7 +39,8 @@ body {
 	overflow: hidden;
 }
 
-.JCV-joplin-note-label {
+.JCV-joplin-note-label,
+.JCV-link-pill-label {
 	display: -webkit-box;
 	-webkit-line-clamp: 3;
 	-webkit-box-orient: vertical;
@@ -47,6 +49,7 @@ body {
 	word-break: break-word;
 }
 
-.JCV-joplin-note:hover .JCV-joplin-note-label {
+.JCV-joplin-note:hover .JCV-joplin-note-label,
+.JCV-link-pill:hover .JCV-link-pill-label {
 	text-decoration: underline;
 }

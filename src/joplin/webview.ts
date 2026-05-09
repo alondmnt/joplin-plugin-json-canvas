@@ -2,7 +2,7 @@
 // Communicates with the plugin host via the global `webviewApi` object.
 
 import { CanvasView } from '../core/CanvasView';
-import type { CanvasFileNode, JSONCanvas } from '../core/types';
+import type { CanvasFileNode, CanvasLinkNode, JSONCanvas } from '../core/types';
 import { parseNoteRef } from './joplinRef';
 
 declare const webviewApi: {
@@ -39,6 +39,10 @@ webviewApi.onMessage(({ message }) => {
 				render: renderJoplinNote,
 				onClick: handleJoplinNoteClick,
 			},
+			linkRenderer: {
+				render: renderLink,
+				onClick: handleLinkClick,
+			},
 		});
 	}
 	view.load(message.canvas);
@@ -55,6 +59,34 @@ function renderJoplinNote(container: HTMLElement, node: CanvasFileNode): void {
 	// a resource, not a note); the click handler short-circuits there.
 	label.textContent = titles[node.id] ?? parseNoteRef(node.file)!;
 	container.appendChild(label);
+}
+
+function renderLink(container: HTMLElement, node: CanvasLinkNode): void {
+	container.classList.add('JCV-link-pill');
+	const label = document.createElement('div');
+	label.classList.add('JCV-link-pill-label');
+	label.textContent = node.url;
+	container.appendChild(label);
+}
+
+function handleLinkClick(node: CanvasLinkNode): void {
+	if (!isHttpUrl(node.url)) {
+		// openItem can technically dispatch other protocols (file://, mailto:, etc.)
+		// but for v1 we restrict link nodes to web URLs to avoid surfacing Joplin's
+		// "unsupported link" error box for canvas-author typos.
+		console.warn('Canvas: link node URL is not http(s), ignoring click', node.url);
+		return;
+	}
+	void webviewApi.postMessage({ type: 'openItem', link: node.url });
+}
+
+function isHttpUrl(value: string): boolean {
+	try {
+		const u = new URL(value);
+		return u.protocol === 'http:' || u.protocol === 'https:';
+	} catch {
+		return false;
+	}
 }
 
 function handleJoplinNoteClick(node: CanvasFileNode): void {
