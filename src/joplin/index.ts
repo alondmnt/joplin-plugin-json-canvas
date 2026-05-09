@@ -2,6 +2,7 @@ import joplin from 'api';
 import { parseFromBody, serializeToBody } from '../core/format';
 import type { ViewHandle } from 'api/types';
 import type { BlockSpan, JSONCanvas } from '../core/types';
+import { parseNoteRef } from './joplinRef';
 
 interface EditorState {
 	noteId: string | null;
@@ -63,10 +64,39 @@ async function loadFromCurrentNote(handle: ViewHandle): Promise<void> {
 	state.blockSpan = parsed.blockSpan;
 
 	if (!state.webviewReady) return;
+	const titles = await fetchNoteTitles(parsed.canvas);
 	await joplin.views.editors.postMessage(handle, {
 		type: 'load',
 		canvas: parsed.canvas,
+		titles,
 	});
+}
+
+async function fetchNoteTitles(canvas: JSONCanvas): Promise<Record<string, string>> {
+	// Joplin uses the same `:/<32-hex>` shape for both notes and resources.
+	// We probe via `data.get(['notes', id])` and only keep entries that resolve;
+	// a resource id throws a 404 and is silently dropped, leaving the webview
+	// to render a placeholder and short-circuit clicks.
+	const lookups: Array<Promise<[string, string] | null>> = [];
+	for (const node of canvas.nodes) {
+		if (node.type !== 'file') continue;
+		const refId = parseNoteRef(node.file);
+		if (!refId) continue;
+		lookups.push(
+			joplin.data
+				.get(['notes', refId], { fields: ['title'] })
+				.then((note: { title?: string }) =>
+					note?.title ? ([node.id, note.title] as [string, string]) : null,
+				)
+				.catch(() => null),
+		);
+	}
+	const results = await Promise.all(lookups);
+	const titles: Record<string, string> = {};
+	for (const result of results) {
+		if (result) titles[result[0]] = result[1];
+	}
+	return titles;
 }
 
 function handleMessage(handle: ViewHandle, message: unknown): void {
@@ -88,6 +118,11 @@ function handleMessage(handle: ViewHandle, message: unknown): void {
 
 	if (m.type === 'change' && isJSONCanvas(m.canvas)) {
 		void persistChange(handle, m.canvas);
+		return;
+	}
+
+	if (m.type === 'requestOpen' && typeof (m as { noteId?: unknown }).noteId === 'string') {
+		void joplin.commands.execute('openNote', (m as { noteId: string }).noteId);
 		return;
 	}
 }
