@@ -20,6 +20,8 @@ export interface DragHandlerOptions {
 	onMove: (id: string, newX: number, newY: number) => void;
 	/** Fires once on drag-end. Use for committing canonical state (save). */
 	onCommit: (id: string, newX: number, newY: number) => void;
+	/** Fires on pointerup when the gesture stayed below the move threshold. */
+	onClick?: (id: string) => void;
 }
 
 interface DragState {
@@ -74,6 +76,8 @@ export function attachDragHandler(options: DragHandlerOptions): () => void {
 			const newX = parseFloat(drag.overlay.style.left);
 			const newY = parseFloat(drag.overlay.style.top);
 			options.onCommit(drag.nodeId, newX, newY);
+		} else {
+			options.onClick?.(drag.nodeId);
 		}
 		drag = null;
 	};
