@@ -1,6 +1,6 @@
 # js-canvas — Product Requirements Document
 
-**Status:** Draft v0.5 — switches to plugin-first framing. v1 is a Joplin plugin; the canvas core sits behind a clean module boundary so a library extraction is possible later, but is not a v1 deliverable. Open questions tracked at the end.
+**Status:** Draft v0.6 — substrate decision resolved (hesprs/json-canvas-viewer with wrap-and-extend, see [ADR 0001](adr/0001-substrate.md)). Plugin-first framing from v0.5 stands. Open questions tracked at the end.
 
 ## Purpose
 
@@ -243,7 +243,7 @@ Library extraction is **not** a v1 success criterion. It becomes a goal only if 
 
 ## Open questions
 
-1. **Substrate.** [js-draw](https://github.com/personalizedrefrigerator/js-draw) / [hesprs/json-canvas-viewer](https://github.com/hesprs/json-canvas-viewer) / [weave.js](https://github.com/InditexTech/weave-js) (Inditex, Jan 2026) / from-scratch. **Resolved by a 1–2 week phase-0 spike before further PRD commitment.** weave.js gives pan/zoom/selection/drag for free at the cost of writing a JSON Canvas ↔ weave-state adapter and pulling in collaboration code we may not need yet.
+1. **Substrate.** ✅ **Resolved**: [hesprs/json-canvas-viewer](https://github.com/hesprs/json-canvas-viewer) with the wrap-and-extend pattern. Pinned dep version, capture-phase pointer listeners + `stopPropagation()` to claim gestures from `pointeract`, private-API touchpoints wrapped in helpers with regression tests. Fork stays available as a v2 fallback. See [ADR 0001](adr/0001-substrate.md) for the full rationale and the rejected alternatives.
 2. **Undo/redo location.** In-core (cleaner UX) vs. delegated to Joplin's undo. Lean: in-core, simple linear history scoped to the canvas note.
 3. **Markdown renderer contract.** Tight (specific HAST/MDAST shape) vs. loose (any DOM). Lean: loose.
 4. **Partial-load behaviour.** Lean: strict reject on validation failure in v1; user gets a clear error and a way to view the raw JSON.
@@ -259,6 +259,9 @@ Library extraction is **not** a v1 success criterion. It becomes a goal only if 
 - [YesYouKan plugin — editor-replacement pattern reference](https://github.com/joplin/plugin-yesyoukan)
 - [Joplin Excalidraw plugin — modal-popup pattern (not what we want, but useful contrast)](https://github.com/artikell/joplin-excalidraw)
 - [js-draw — substrate candidate, library-extraction precedent](https://github.com/personalizedrefrigerator/js-draw)
-- [hesprs/json-canvas-viewer — substrate candidate](https://github.com/hesprs/json-canvas-viewer)
-- [weave.js — substrate candidate](https://github.com/InditexTech/weave-js)
+- [hesprs/json-canvas-viewer — chosen substrate (ADR 0001)](https://github.com/hesprs/json-canvas-viewer)
+- [pointeract — gesture library bundled by hesprs](https://github.com/hesprs/pointeract)
+- [weave.js — substrate candidate, rejected (ADR 0001)](https://github.com/InditexTech/weavejs)
 - [Advanced Canvas — feature reference, GPL-3.0, not reusable as code](https://github.com/Developer-Mike/obsidian-advanced-canvas)
+- [ADR 0001 — substrate decision](adr/0001-substrate.md)
+- [Phase 0 spike notes](phase0-notes.md), [hesprs architecture investigation](phase0b-hesprs-architecture.md), [drag spike findings](phase0b-drag-spike.md)
