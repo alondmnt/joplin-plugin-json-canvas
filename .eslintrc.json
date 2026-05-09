@@ -1,0 +1,49 @@
+{
+	"root": true,
+	"parser": "@typescript-eslint/parser",
+	"parserOptions": {
+		"ecmaVersion": 2020,
+		"sourceType": "module"
+	},
+	"plugins": ["@typescript-eslint", "boundaries"],
+	"extends": ["eslint:recommended", "plugin:@typescript-eslint/recommended", "prettier"],
+	"settings": {
+		"boundaries/include": ["src/**/*.ts"],
+		"boundaries/elements": [
+			{ "type": "core", "pattern": "src/core/**" },
+			{ "type": "joplin", "pattern": "src/joplin/**" }
+		]
+	},
+	"rules": {
+		"boundaries/element-types": [
+			"error",
+			{
+				"default": "disallow",
+				"rules": [
+					{ "from": "core", "allow": ["core"] },
+					{ "from": "joplin", "allow": ["core", "joplin"] }
+				]
+			}
+		]
+	},
+	"overrides": [
+		{
+			"files": ["src/core/**/*.ts"],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"paths": [
+							{
+								"name": "api",
+								"message": "Canvas core must not import the Joplin plugin API."
+							}
+						],
+						"patterns": ["api/*"]
+					}
+				]
+			}
+		}
+	],
+	"ignorePatterns": ["dist/", "publish/", "node_modules/", "api/"]
+}

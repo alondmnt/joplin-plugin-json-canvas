@@ -1,0 +1,12 @@
+dist/
+publish/
+node_modules/
+api/
+package-lock.json
+
+# docs are written prose; preserve manual formatting decisions
+docs/
+*.md
+
+# vendored from generator-joplin; keep its style so future re-syncs are clean
+webpack.config.js

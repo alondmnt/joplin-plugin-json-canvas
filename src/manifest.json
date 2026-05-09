@@ -1,0 +1,16 @@
+{
+	"manifest_version": 1,
+	"id": "joplin.plugin.alondmnt.canvas",
+	"app_min_version": "3.6",
+	"version": "0.0.1",
+	"name": "Canvas",
+	"description": "Interactive JSON Canvas editor for Joplin notes.",
+	"author": "alondmnt",
+	"homepage_url": "",
+	"repository_url": "",
+	"keywords": [],
+	"categories": ["editor"],
+	"screenshots": [],
+	"icons": {},
+	"promo_tile": {}
+}
