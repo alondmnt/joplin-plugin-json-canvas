@@ -50,22 +50,21 @@ function renderJoplinNote(container: HTMLElement, node: CanvasFileNode): void {
 	container.classList.add('JCV-joplin-note');
 	const label = document.createElement('div');
 	label.classList.add('JCV-joplin-note-label');
-	// Fall back to the bare id if the host couldn't resolve a title (e.g.,
-	// the ref is a resource, not a note). Click handler will short-circuit.
-	label.textContent = titles[node.id] ?? parseNoteRef(node.file) ?? node.file;
+	// matches() already guarantees parseNoteRef is non-null. The bare id is
+	// the fallback when the host couldn't resolve a title (e.g., the ref is
+	// a resource, not a note); the click handler short-circuits there.
+	label.textContent = titles[node.id] ?? parseNoteRef(node.file)!;
 	container.appendChild(label);
 }
 
 function handleJoplinNoteClick(node: CanvasFileNode): void {
-	const noteId = parseNoteRef(node.file);
-	if (!noteId) return;
 	if (!titles[node.id]) {
 		// No resolved title => the ref isn't a note we know about (likely a
 		// resource id). Resource handling is a separate slice; ignore here.
 		console.debug('Canvas: clicked file ref without resolved title', node.file);
 		return;
 	}
-	void webviewApi.postMessage({ type: 'requestOpen', noteId });
+	void webviewApi.postMessage({ type: 'requestOpen', noteId: parseNoteRef(node.file)! });
 }
 
 function isLoadMessage(value: unknown): value is LoadMessage {

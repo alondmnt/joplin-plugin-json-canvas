@@ -96,11 +96,17 @@ export class CanvasView {
 		return this.canvas.nodes.find((n) => n.id === id) ?? null;
 	}
 
+	// IMPORTANT: any future mutator on a node (resize, label edit, color, etc.)
+	// must mutate BOTH `this.canvas` and `this.viewerCanvas`. Matched file
+	// nodes hold distinct objects in the two arrays (buildViewerCanvas spreads
+	// them to apply the synth ext); writing to only one will silently desync
+	// the rendered view from saved state. If a second mutator lands, extract
+	// a `mutateNode(id, fn)` helper that handles both — don't keep duplicating
+	// the find-and-write pattern.
 	private handleNodeMoveLive(id: string, newX: number, newY: number): void {
-		// Mutate both the canonical and viewer-side node refs. Hesprs's renderer
-		// reads node positions from `nodeMap[id].ref.x/y`, where `ref` points
-		// into viewerCanvas.nodes; the canonical copy is what we ship back to
-		// the host on commit. Triggering viewer.refresh() — not viewer.load() —
+		// Hesprs's renderer reads positions from `nodeMap[id].ref.x/y`, where
+		// `ref` points into viewerCanvas.nodes; canonical canvas.nodes is what
+		// we ship back to the host on commit. viewer.refresh() — not load() —
 		// redraws only the canvas-side layer (edges, file/group nodes) without
 		// the resetView/overlay-rebuild that load() would do.
 		//
