@@ -1,5 +1,5 @@
 import joplin from 'api';
-import { bodyHasCanvasFence, parseFromBody, serializeToBody } from '../core/format';
+import { parseFromBody, serializeToBody } from '../core/format';
 import type { ViewHandle } from 'api/types';
 import type { BlockSpan, JSONCanvas } from '../core/types';
 
@@ -40,7 +40,9 @@ joplin.plugins.register({
 			onActivationCheck: async ({ noteId }) => {
 				if (!noteId) return false;
 				const note = await joplin.data.get(['notes', noteId], { fields: ['body'] });
-				if (!bodyHasCanvasFence(note.body)) return false;
+				// Strict activation per Q13: parse + schema check so the editor
+				// toggle only appears when the canvas is actually loadable.
+				// parseFromBody returns null cheaply if no fence is present.
 				return parseFromBody(note.body) !== null;
 			},
 		});

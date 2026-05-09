@@ -5,11 +5,16 @@
 //
 //     Optional preamble in markdown.
 //
-//     ```canvas
+//     ````canvas
 //     { "nodes": [], "edges": [] }
-//     ```
+//     ````
 //
 //     Optional postscript.
+//
+// **The fence is four backticks**, not three. Markdown allows a closing fence
+// to have any count >= the opening; using four lets the JSON inside contain
+// up to three backticks (e.g., a text node whose markdown contains a fenced
+// code sample) without our regex truncating the block early.
 //
 // `parseFromBody` finds that block and returns the parsed JSON Canvas plus the
 // character span of the JSON content. `serializeToBody` splices new JSON into
@@ -19,13 +24,13 @@
 
 import type { BlockSpan, JSONCanvas, ParsedBody } from './types';
 
-const OPEN_FENCE_RE = /^```canvas\s*\r?\n/m;
-const CLOSE_FENCE_RE = /\r?\n```\s*(?:\r?\n|$)/;
+const OPEN_FENCE_RE = /^````canvas\s*\r?\n/m;
+const CLOSE_FENCE_RE = /\r?\n````\s*(?:\r?\n|$)/;
 
 /**
- * Locate and parse the first ```canvas ... ``` block in the body. Returns null
- * if no block is found, the JSON inside doesn't parse, or it isn't shaped like
- * a JSON Canvas (missing or non-array `nodes`).
+ * Locate and parse the first ````canvas ... ```` block in the body. Returns
+ * null if no block is found, the JSON inside doesn't parse, or it isn't
+ * shaped like a JSON Canvas (missing or non-array `nodes`).
  */
 export function parseFromBody(body: string): ParsedBody | null {
 	const span = findBlockSpan(body);
@@ -52,14 +57,6 @@ export function serializeToBody(
 ): string {
 	const json = JSON.stringify(canvas, null, '\t');
 	return originalBody.slice(0, blockSpan.start) + json + originalBody.slice(blockSpan.end);
-}
-
-/**
- * Cheap activation gate: does the body contain a ```canvas opening fence?
- * Doesn't validate JSON inside; use parseFromBody for the strict check.
- */
-export function bodyHasCanvasFence(body: string): boolean {
-	return OPEN_FENCE_RE.test(body);
 }
 
 function findBlockSpan(body: string): BlockSpan | null {
