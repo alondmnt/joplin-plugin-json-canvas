@@ -64,7 +64,7 @@ async function loadFromCurrentNote(handle: ViewHandle): Promise<void> {
 	state.blockSpan = parsed.blockSpan;
 
 	if (!state.webviewReady) return;
-	const titles = await fetchNoteTitles(parsed.canvas);
+	const titles = await fetchItemTitles(parsed.canvas);
 	await joplin.views.editors.postMessage(handle, {
 		type: 'load',
 		canvas: parsed.canvas,
@@ -72,24 +72,20 @@ async function loadFromCurrentNote(handle: ViewHandle): Promise<void> {
 	});
 }
 
-async function fetchNoteTitles(canvas: JSONCanvas): Promise<Record<string, string>> {
-	// Joplin uses the same `:/<32-hex>` shape for both notes and resources.
-	// We probe via `data.get(['notes', id])` and only keep entries that resolve;
-	// a resource id throws a 404 and is silently dropped, so the webview
-	// falls back to the bare id for display. (Click routing is unaffected —
-	// openItem on the host handles both notes and resources.)
+async function fetchItemTitles(canvas: JSONCanvas): Promise<Record<string, string>> {
+	// Joplin uses `:/<32-hex>` for both notes and resources. Try notes first
+	// (the common case), fall back to resources. Anything that 404s on both
+	// is silently dropped — the webview falls back to the bare id for display.
+	// Click routing is independent: openItem on the host handles both.
 	const lookups: Array<Promise<[string, string] | null>> = [];
 	for (const node of canvas.nodes) {
 		if (node.type !== 'file') continue;
 		const refId = parseNoteRef(node.file);
 		if (!refId) continue;
 		lookups.push(
-			joplin.data
-				.get(['notes', refId], { fields: ['title'] })
-				.then((note: { title?: string }) =>
-					note?.title ? ([node.id, note.title] as [string, string]) : null,
-				)
-				.catch(() => null),
+			resolveItemTitle(refId).then((title) =>
+				title ? ([node.id, title] as [string, string]) : null,
+			),
 		);
 	}
 	const results = await Promise.all(lookups);
@@ -98,6 +94,26 @@ async function fetchNoteTitles(canvas: JSONCanvas): Promise<Record<string, strin
 		if (result) titles[result[0]] = result[1];
 	}
 	return titles;
+}
+
+async function resolveItemTitle(id: string): Promise<string | null> {
+	try {
+		const note = (await joplin.data.get(['notes', id], { fields: ['title'] })) as {
+			title?: string;
+		};
+		if (note?.title) return note.title;
+	} catch {
+		// not a note; try resource
+	}
+	try {
+		const resource = (await joplin.data.get(['resources', id], { fields: ['title'] })) as {
+			title?: string;
+		};
+		if (resource?.title) return resource.title;
+	} catch {
+		// not a resource either
+	}
+	return null;
 }
 
 function handleMessage(handle: ViewHandle, message: unknown): void {
