@@ -1,16 +1,16 @@
 {
-	"name": "joplin-plugin-jsoncanvas",
+	"name": "joplin-plugin-json-canvas",
 	"version": "0.0.1",
 	"private": true,
 	"description": "Interactive JSON Canvas editor for Joplin notes.",
 	"author": "alondmnt",
-	"homepage": "https://github.com/alondmnt/joplin-plugin-jsoncanvas",
+	"homepage": "https://github.com/alondmnt/joplin-plugin-json-canvas",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/alondmnt/joplin-plugin-jsoncanvas.git"
+		"url": "https://github.com/alondmnt/joplin-plugin-json-canvas.git"
 	},
 	"bugs": {
-		"url": "https://github.com/alondmnt/joplin-plugin-jsoncanvas/issues"
+		"url": "https://github.com/alondmnt/joplin-plugin-json-canvas/issues"
 	},
 	"scripts": {
 		"dist": "webpack --env joplin-plugin-config=buildMain && webpack --env joplin-plugin-config=buildExtraScripts && webpack --env joplin-plugin-config=createArchive",
