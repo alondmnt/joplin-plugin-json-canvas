@@ -1,0 +1,23 @@
+/* Layout fix from phase 0c: Joplin's editor pane has height-by-content
+ * layout, so the canvas's infinite-content overlays would push the page
+ * taller every render. overflow:hidden on root + position:absolute clip
+ * the canvas to the pane. */
+
+html,
+body {
+	margin: 0;
+	padding: 0;
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+}
+
+#root {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+	touch-action: none;
+	background: var(--joplin-background-color, #fafafa);
+}
