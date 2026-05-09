@@ -1,18 +1,25 @@
 # js-canvas — Product Requirements Document
 
-**Status:** Draft v0.3 — adds a Modes section clarifying view/edit/read-only semantics, plus a note on js-draw's SVG export as a v2 image-export starting point. Open questions tracked at the end.
+**Status:** Draft v0.4 — drops translucence from v1, adds weave.js as a substrate candidate, clarifies the parallel library + plugin development model. Open questions tracked at the end.
 
 ## Purpose
 
-js-canvas is an MIT-licensed library for embedding an interactive [JSON Canvas](https://jsoncanvas.org/) editor into web applications. It exists because no open-source interactive JSON Canvas implementation currently exists outside Obsidian itself — every published library is either a parser, a static renderer, or a viewer-only tool ([apps & libraries directory](https://jsoncanvas.org/docs/apps/)).
+js-canvas is an MIT-licensed library for embedding an interactive [JSON Canvas](https://jsoncanvas.org/) editor into web applications. It exists because no open-source interactive JSON Canvas implementation currently exists outside Obsidian itself — every published library is a parser, static renderer, or viewer ([apps & libraries directory](https://jsoncanvas.org/docs/apps/)).
 
-The library is intended to be host-agnostic: a single implementation should serve Joplin, Obsidian-compatible tooling, vanilla web apps, and future consumers without baking in any one host's assumptions.
+The library is host-agnostic: a single implementation should serve Joplin, Obsidian-compatible tooling, vanilla web apps, and future consumers without baking in any one host's assumptions.
+
+## Why a library, not a Joplin-only plugin
+
+Primary v1 consumer is a Joplin plugin (per [Joplin Visual Workspace issue #15193](https://github.com/laurent22/joplin/issues/15193)). The temptation is to build only the plugin and skip the library framing.
+
+We follow the [js-draw](https://github.com/personalizedrefrigerator/js-draw) precedent instead: js-draw was developed in parallel with its Joplin freehand-drawing plugin, so a general-purpose library was established alongside the host-specific application. That model produced a reusable component and a working host integration with a clean seam between the two — without the cost of a later library extraction.
+
+Same approach here: the plugin and the library co-evolve. The plugin is the first real host and validates every library decision. Other hosts (Obsidian-compatible tooling, vanilla web) come later, but the library boundary is in place from day 1.
 
 ## Goals
 
 - Read and write JSON Canvas 1.0 losslessly, including unknown-key forward compatibility
-- Provide an interactive editing surface with a **built-in Markdown editor** for text content — usable end-to-end without any host editor
-- Support **translucence** (inline editing of embedded notes) when the host provides read+write hooks, without requiring the host to embed its own editor
+- Provide an interactive editing surface usable by hosts that supply rendering and storage hooks
 - Remain host-agnostic — no assumptions about a particular note system, file system, or Markdown flavour
 - Embeddable in any modern web context: vanilla JS, React, Vue, Preact, plugin webviews
 - First-class pointer input — mouse, touch, and pen treated equally
@@ -24,22 +31,20 @@ The library is intended to be host-agnostic: a single implementation should serv
 - Not a knowledge-graph or semantic-relationship engine
 - Not a full whiteboard tool — freehand drawing belongs in an optional ink layer, not core
 - Not opinionated about persistence — emits/consumes JSON Canvas documents, host handles storage
-- Not opinionated about which Markdown dialect to support — defaults to CommonMark + GFM, host can extend or replace
+- Not opinionated about Markdown dialect — host injects renderer and editor; library defaults are minimal
 - Not a multi-canvas workspace manager — one library instance edits one document
-- Not a real-time collaboration engine in v1 (deferred to optional v2 module)
-- Not a CLI or build-time tool — runtime library only
-- Not a search engine — host indexes the JSON Canvas document body
+- Not a real-time collaboration engine in v1
+- Not a Markdown editor in core — provided as an optional companion package
 - Not a fork of Obsidian's canvas — different code, same open spec
 
 ## Target consumers
 
-Primary v1 consumer: a Joplin plugin (see [Joplin Visual Workspace issue #15193](https://github.com/laurent22/joplin/issues/15193)). Secondary consumers anticipated: Obsidian-compatible tooling, lightweight whiteboard apps, learning/teaching tools, anyone needing to author `.canvas` files outside Obsidian.
+Primary v1 consumer: a Joplin plugin (see [issue #15193](https://github.com/laurent22/joplin/issues/15193)). Secondary consumers anticipated: Obsidian-compatible tooling, lightweight whiteboard apps, anyone needing to author `.canvas` files outside Obsidian.
 
 ## Architectural principles
 
 - **Host-agnostic core.** No `fetch`, no storage, no fixed Markdown flavour, no fixed icon set baked in.
-- **Editor included.** Library ships a working Markdown editor for text nodes; host can swap it.
-- **Resolver pattern for external resources.** File content, link previews, internal references — all resolved through host-provided callbacks. Hosts that supply both reader and writer get translucence.
+- **Resolver pattern for external resources.** File content, link previews, internal references — all resolved through host-provided callbacks.
 - **Event-driven interface.** Library emits events; host subscribes and responds.
 - **Lossless round-trip.** Loading and saving an unmodified document produces a byte-identical JSON Canvas document, modulo property ordering.
 - **No global state.** Multiple instances on a page must work independently.
@@ -47,57 +52,45 @@ Primary v1 consumer: a Joplin plugin (see [Joplin Visual Workspace issue #15193]
 
 ## Scope ranking
 
-Every functional requirement is tagged with one of:
-
-- **POC** — proof of concept. "Is this even feasible?" Throwaway demos to de-risk the approach. Not for users.
-- **MVP** — simplest version useful to a real user. Shippable as v0.x. A user with this version can create text-and-edge canvases and have notes referenced by ID.
+- **POC** — proof of concept. Throwaway demos to de-risk the substrate. Not for users.
+- **MVP** — simplest version useful to a real user. Shippable as v0.x. A user with this version can create text-and-edge canvases; nodes can reference notes by ID.
 - **v1** — production-stable first release. What we'd want before announcing publicly and before Joplin would ship the plugin to general users.
 - **v2** — post-v1 extensions and refinements.
 
 | Capability | POC | MVP | v1 | v2 |
 |---|:-:|:-:|:-:|:-:|
 | Pan/zoom canvas | ✓ | ✓ | ✓ | ✓ |
-| Hardcoded nodes render (no spec parser) | ✓ | | | |
 | Drag-to-move single node | ✓ | ✓ | ✓ | ✓ |
 | JSON Canvas 1.0 parser/serialiser | | ✓ | ✓ | ✓ |
 | Lossless round-trip incl. unknown keys | | ✓ | ✓ | ✓ |
-| Built-in Markdown editor for text nodes | | ✓ | ✓ | ✓ |
 | Create text node (double-click) | | ✓ | ✓ | ✓ |
-| Inline edit text node | | ✓ | ✓ | ✓ |
+| Inline edit text node (host-supplied editor) | | ✓ | ✓ | ✓ |
 | Create edge (drag-from-handle) | | ✓ | ✓ | ✓ |
 | Delete node/edge | | ✓ | ✓ | ✓ |
 | Single-select | | ✓ | ✓ | ✓ |
 | Resolver hook: file node (read) | | ✓ | ✓ | ✓ |
 | Resolver hook: link node (read) | | ✓ | ✓ | ✓ |
 | `change` / `requestOpen` events | | ✓ | ✓ | ✓ |
-| `insertNode` / `updateNode` / `removeNode` | | ✓ | ✓ | ✓ |
 | `loadDocument` / `getDocument` | | ✓ | ✓ | ✓ |
-| Multi-select + marquee | | | ✓ | ✓ |
-| Resize handles | | | ✓ | ✓ |
-| Edge labels (create/edit) | | | ✓ | ✓ |
-| Edge directionality 3-state UX | | | ✓ | ✓ |
-| Group nodes (visual containment) | | | ✓ | ✓ |
 | Read-only mode | | | ✓ | ✓ |
 | Undo/redo (linear) | | | ✓ | ✓ |
-| Keyboard graph navigation | | | ✓ | ✓ |
-| Z-order commands | | | ✓ | ✓ |
 | CSS-variable theming complete | | | ✓ | ✓ |
 | Accessibility baseline (ARIA/focus/motion) | | | ✓ | ✓ |
 | Mobile touch input fully working | | | ✓ | ✓ |
-| **Translucence** (editable file nodes via writer hook) | | | | ✓ |
+| Optional `js-canvas-editor-default` companion (textarea + markdown-it) | | | ✓ | ✓ |
+| Multi-select + marquee | | | | ✓ |
+| Resize handles | | | | ✓ |
+| Edge labels (create/edit) | | | | ✓ |
+| Edge directionality 3-state UX | | | | ✓ |
+| Group nodes (visual containment) | | | | ✓ |
+| Keyboard graph navigation | | | | ✓ |
+| Z-order commands | | | | ✓ |
+| Inline editing of file-node content (writer hook) | | | | ✓ |
 | Optional CodeMirror editor module | | | | ✓ |
 | Optional minimap module | | | | ✓ |
 | Optional ink overlay (if js-draw substrate) | | | | ✓ |
 | Custom node-type registry | | | | ✓ |
-| Advanced edge routing (orthogonal, A*) | | | | ✓ |
-| Custom node shapes (flowchart) | | | | ✓ |
-| Spatial keyboard navigation | | | | ✓ |
 | Image export (PNG/SVG) | | | | ✓ |
-| Presentation mode | | | | ✓ |
-| Focus mode (dim non-selected) | | | | ✓ |
-| Find-in-canvas | | | | ✓ |
-| i18n string injection | | | | ✓ |
-| Persistent viewport per document | | | | ✓ |
 | Real-time collaboration adapter | | | | ✓ |
 
 ## Functional requirements
@@ -114,24 +107,19 @@ Every functional requirement is tagged with one of:
 ### Viewport & rendering
 
 - Effectively infinite canvas — pan and zoom without arbitrary content bounds (POC)
-- Zoom range at least 10%–1000%; wider preferred (MVP)
+- Zoom range at least 10%–1000% (MVP)
 - 60fps pan/zoom up to 500 nodes on midrange hardware (v1); degrade gracefully beyond
 - Off-viewport culling for nodes outside the visible area (v1)
 - Fit-to-content and fit-to-selection commands (v1)
-- Default initial viewport: persist last position per document; fallback to fit-to-content with a max zoom-out cap (v2)
 
 ### Modes (v1)
 
 The canvas operates in one of two modes, toggled at runtime via `setReadOnly(boolean)`:
 
-- **Edit mode** (default): editing affordances visible (edge-creation handles on hover, resize handles on selection, selection rings); drag-to-move, create-node, create-edge, and delete enabled; double-click on a text node enters source-editing state for that node.
-- **Read-only mode**: affordances hidden; pan and zoom remain available; selection is configurable (default off); double-click does not enter source-editing; activating a file/link node still emits `requestOpen`.
+- **Edit mode** (default): editing affordances visible (edge-creation handles on hover, selection rings); drag-to-move, create-node, create-edge, and delete enabled; double-click on a text node enters source-editing state for that node.
+- **Read-only mode**: affordances hidden; pan and zoom remain available; double-click does not enter source-editing; activating a file/link node still emits `requestOpen`.
 
-Both modes share the same canvas chrome (positions, edges, viewport) and the same document — the difference is *affordance visibility* and *whether nodes can enter source-editing*, not a structural change to the document.
-
-A separate orthogonal axis: text-node *content presentation* (rendered Markdown vs raw Markdown source) is a per-node state, not a canvas-wide mode. A node in source-editing state shows raw Markdown; a node not in source-editing shows rendered output. Read-only mode disables entry into source-editing for all nodes, so the canvas always shows rendered content.
-
-Image export (v2) is a third path, neither edit nor read-only — a static snapshot of the document with no affordances.
+A separate orthogonal axis: text-node *content presentation* (rendered Markdown vs raw Markdown source) is a per-node state, not a canvas-wide mode. Read-only mode disables entry into source-editing for all nodes.
 
 ### Interaction model
 
@@ -140,56 +128,33 @@ Image export (v2) is a third path, neither edit nor read-only — a static snaps
 | Pan | Middle-click drag, space+drag, two-finger touch | MVP |
 | Zoom | Mouse wheel, pinch, `+`/`-` keys | MVP |
 | Select node/edge | Click | MVP |
-| Add to selection | Shift+click | v1 |
-| Marquee select | Drag empty space | v1 |
 | Move selection | Drag | MVP |
-| Resize node | Handles on selection | v1 |
 | Create text node | Double-click empty space | MVP |
 | Edit text node | Double-click node, or Enter on selection | MVP |
 | Create edge | Drag from edge handle on hovered node | MVP |
 | Delete | Backspace / Delete | MVP |
-| Undo / redo | Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z | v1 |
 | Activate file/link node | Single click → `requestOpen` event | MVP |
-| Edit edge label | Double-click edge | v1 |
-| Toggle edge directionality | 3-state context menu (none / uni / bi) | v1 |
-| Keyboard graph navigation | Arrow keys, follows edges | v1 |
-| Bring to front / send to back | Context menu / shortcut | v1 |
+| Undo / redo | Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z | v1 |
 | Toggle read-only | Programmatic / runtime | v1 |
-| Inline-edit file node (translucence) | Double-click, if writer hook present | v2 |
 
-### Built-in Markdown editor (MVP)
+### Markdown editor — optional companion (v1)
 
-The library ships with a working Markdown editor used for all text nodes by default. This is what makes the library usable end-to-end without host integration.
-
-- **Default implementation:** plain textarea for editing + `markdown-it` (CommonMark + GFM) for view-mode rendering, toggled by edit/view state. Lightweight; targets the smallest reasonable bundle delta.
-- **Mode toggle:** double-click enters edit mode; blur or Esc exits to view mode (matches Obsidian's affordance).
-- **Replaceable:** host can swap the editor via `setEditor(editorImpl)` for richer experiences (CodeMirror, ProseMirror, host's own editor).
-- **Optional v2 module:** an opt-in CodeMirror 6 editor shipped alongside core for hosts that want a richer experience without writing one.
-
-### Translucence — inline editing of embedded notes (v2)
-
-When a host provides both `resolveFileNode(ref)` (reader) and `writeFileNode(ref, content)` (writer) for a given file type, the library renders that file node as inline-editable using the same Markdown editor used for text nodes.
-
-- Library reads content via the resolver, edits in the canvas, writes back via the writer
-- Host owns the underlying note; library never touches host storage directly
-- For non-Markdown file types (images, PDFs), translucence does not apply — they remain rendered-only via the resolver's renderer
-- Hosts without a native embedded editor (e.g. Joplin) get translucence essentially for free, just by wiring a writer hook
-
-This pattern is the core architectural insight of v0.2: translucence is a *library* capability that hosts opt into, not a *host* capability that the library passively reflects.
+The library does **not** bundle a Markdown editor in core. Hosts that already have one (Joplin, Obsidian) wire their own via `setEditor(editorImpl)`. For hosts that don't, we publish an optional companion package `js-canvas-editor-default` (plain textarea for editing + `markdown-it` for view-mode rendering) that can be opted in. This keeps the core bundle small and avoids duplicating editor code that hosts already ship.
 
 ### Node behaviour
 
-- **Text** (MVP): inline Markdown editor in edit mode; rendered preview in view mode using the library's default renderer (host can swap)
-- **File** (MVP): read-only render via host resolver showing content (image, document title, custom thumbnail) and click handler via `requestOpen`. (v2): editable inline if host provides writer hook
+- **Text** (MVP): inline editing in edit mode (host-supplied editor); rendered preview in view mode (host-supplied renderer)
+- **File** (MVP): read-only render via host resolver showing content (image, document title, custom thumbnail) and click handler via `requestOpen`
 - **Link** (MVP): placeholder showing the URL; host can inject preview metadata (title, favicon, OG image)
-- **Group** (v1): visual container with label; selectable as a unit; click-through to interact with children. v1 does not enforce containment when children move out
+- **Group** (v2): visual container with label; selectable as a unit
+
+Inline editing of file-node *content* (live editing of an embedded note inside the canvas) is a v2 hypothesis, gated on a host providing a `writeFileNode` hook. Validate demand from real users before designing it; the simpler path (click a file node → host opens that note in its own editor via `requestOpen`) covers the spatial-workspace use case.
 
 ### Edges
 
 - Smooth Bezier curves between attached node sides (MVP)
-- Selectable; selected edges expose label edit (v1)
-- Endpoint markers per spec (`none`, `arrow`); 3-state UX toggle in context menu (v1)
-- v1 routing: Bezier with side-aware tangents
+- Selectable; selected edges expose label edit (v2)
+- Endpoint markers per spec (`none`, `arrow`); 3-state UX toggle (v2)
 - Advanced routing (orthogonal, A*, obstacle-avoidance) — v2
 
 ### Persistence & API surface (MVP)
@@ -200,14 +165,6 @@ interface JsCanvas {
   loadDocument(doc: JSONCanvasDocument): void
   getDocument(): JSONCanvasDocument
 
-  // Granular operations (used by hosts wiring drag-and-drop, paste-URL, etc.)
-  insertNode(node: PartialNode, position: { x: number; y: number }): NodeId
-  updateNode(id: NodeId, patch: Partial<Node>): void
-  removeNode(id: NodeId): void
-  insertEdge(edge: PartialEdge): EdgeId
-  updateEdge(id: EdgeId, patch: Partial<Edge>): void
-  removeEdge(id: EdgeId): void
-
   // Mode
   setReadOnly(readonly: boolean): void
 
@@ -216,7 +173,7 @@ interface JsCanvas {
   setEditor(editor: EditorImpl): void
 
   // Events
-  on(event: 'change', handler: (doc: JSONCanvasDocument) => void): void
+  on(event: 'change', handler: (patch: DocumentPatch) => void): void
   on(event: 'select', handler: (sel: Selection) => void): void
   on(event: 'viewport', handler: (vp: Viewport) => void): void
   on(event: 'requestOpen', handler: (node: Node) => void): void
@@ -227,22 +184,24 @@ interface JsCanvas {
 }
 ```
 
+`change` emits a patch, not the whole document, so hosts can apply changes incrementally and keep `getDocument` cheap. Granular mutation methods (`insertNode`, `updateEdge`, etc.) are deferred until a host actually needs them.
+
 ### Resolver hooks (host-injected)
 
 - `resolveFileNode(ref: string) → { renderer?: () => DOMElement, label?: string }` — host returns how to render and label this file reference (MVP)
-- `writeFileNode(ref: string, content: string) → Promise<void>` — host accepts content updates; presence enables translucence for that file type (v2)
 - `resolveLinkNode(url: string) → { renderer?: () => DOMElement, label?: string }` — host returns preview/label (MVP)
+- `writeFileNode(ref: string, content: string) → Promise<void>` — host accepts content updates; presence enables inline file-node editing (v2)
 - All resolvers may return Promises; library handles loading state
 - All resolvers are optional — defaults are sensible placeholders
 
-The resolver pattern is what makes the library host-agnostic. In Joplin, `resolveFileNode` interprets `:/noteid` and fetches via the data API; `writeFileNode` writes back via the same API. In a vanilla web demo, it might fetch a Markdown file over HTTP. In Obsidian-compat mode, vault-relative paths.
+In Joplin, `resolveFileNode` interprets `:/noteid` and fetches via the data API. In Obsidian-compat mode, vault-relative paths. In a vanilla web demo, an HTTP fetch.
 
 ## Non-functional requirements
 
-- **Bundle size:** core + default editor under ~150 KB minified+gzipped, excluding host-injected renderers (revisit after substrate decision)
+- **Bundle size:** core under ~200 KB minified+gzipped, excluding host-injected renderers. Optional `js-canvas-editor-default` adds ~50 KB.
 - **Browser support:** evergreen (last 2 stable Chrome/Firefox/Safari/Edge); ES2020 minimum
 - **Mobile:** working on iOS Safari and Android Chrome; touch and pen first-class (v1)
-- **Accessibility (v1):** keyboard graph navigation across nodes, ARIA labels, focus indicators, `prefers-reduced-motion` respected
+- **Accessibility (v1):** ARIA labels, focus indicators, `prefers-reduced-motion` respected
 - **TypeScript:** full types exported, strict mode clean
 - **Tests:** 100% spec round-trip on the spec's own fixtures (MVP); interaction tests via headless browser (v1)
 - **No network from core.** No telemetry, no analytics, no auto-update, no remote font loading
@@ -252,43 +211,37 @@ The resolver pattern is what makes the library host-agnostic. In Joplin, `resolv
 
 - **Direct manipulation.** Click a thing, drag a thing. No hidden menus for primary actions.
 - **Visible selection.** What is selected is unambiguous at a glance.
-- **Helpful empty state.** An empty canvas hints at the first action.
 - **Convention over invention.** Where Figma, Miro, and Obsidian Canvas agree on a gesture, follow them.
 - **No modals in core.** Library puts no dialogs on the page; host wraps the canvas with whatever chrome it wants.
 - **Theming via CSS variables.** Every visual decision has a token; no hardcoded colour anywhere in core.
 
-## Extensibility (v2+)
+## Success criteria
 
-- **Custom node types** registered as unknown keys for spec-strict interop preservation
-- **Optional modules** (each opt-in, tree-shakeable): CodeMirror editor, minimap, ink overlay (if [js-draw](https://github.com/personalizedrefrigerator/js-draw)), collaboration adapter, custom edge routers, image export to PNG/SVG, presentation mode, focus mode, find-in-canvas
-- **Image export note:** if js-draw is chosen as substrate, its native SVG output gives a head start, but the actual work is a JSON-Canvas-tree-to-SVG translation layer that walks nodes, edges, and labels. Either way, image export is a separate render path from interactive view mode — no affordances, no selection rings, no edit handles.
-- **Theme presets:** default light/dark plus minimal
-- **Inspirational features from [Advanced Canvas](https://github.com/Developer-Mike/obsidian-advanced-canvas)** (GPL-3.0, used as feature reference only — not as code we can lift): floating edges (auto-attach side), edge highlighting on selection, encapsulate selection, portals (canvas-in-canvas), collapsible groups, custom node shapes, variable breakpoints, custom colours via CSS
+The library is ready to be called v1 when:
+
+- The Joplin plugin built on this library is merged or accepted by laurent22 (closes [#15193](https://github.com/laurent22/joplin/issues/15193) or its plugin equivalent)
+- 100% round-trip on the JSON Canvas spec fixtures
+- A second host has consumed the library (vanilla web demo at minimum; ideally Obsidian-compatible tooling)
+- Interaction tests cover the MVP gesture matrix on desktop and mobile touch
 
 ## Open questions
 
-1. **Substrate.** [js-draw](https://github.com/personalizedrefrigerator/js-draw) / fork [hesprs/json-canvas-viewer](https://github.com/hesprs/json-canvas-viewer) / from-scratch. Phase 0 spike to resolve.
-2. **Default Markdown flavour.** CommonMark only vs. CommonMark + GFM. Lean: GFM by default (tables and task lists are heavily expected).
-3. **Default Markdown library.** `marked` vs `markdown-it`. Both small; `markdown-it` is more extensible. Lean: `markdown-it`.
-4. **Editor swap mechanism.** Per-instance via `setEditor()` vs. per-node-type. Lean: per-instance for v1; per-node-type as v2 if anyone asks.
-5. **Undo/redo location.** In-core (cleaner UX) vs. host responsibility. Lean: in-core, simple linear history, with a hook for hosts that want to integrate with their own undo stack.
-6. **Markdown renderer contract for view-mode.** Tight (specific HAST/MDAST shape) vs. loose (host returns any DOM). Lean: loose.
-7. **Z-order commands.** Expose `bringToFront` / `sendToBack` in core, or leave to host? Lean: core.
-8. **Edge label positioning.** Midpoint only vs. user-draggable. v1: midpoint only.
-9. **Partial-load behaviour.** Strict reject on validation failure vs. load-with-warnings. Lean: strict in v1.
-10. **Internationalisation.** Library has minimal UI strings — likely a `strings` option on construction.
+1. **Substrate.** [js-draw](https://github.com/personalizedrefrigerator/js-draw) / [hesprs/json-canvas-viewer](https://github.com/hesprs/json-canvas-viewer) / [weave.js](https://github.com/InditexTech/weave-js) (Inditex, Jan 2026) / from-scratch. **Resolved by a 1–2 week phase-0 spike before further PRD commitment.** weave.js is the newest candidate and gives pan/zoom/selection/drag for free, at the cost of writing a JSON Canvas ↔ weave-state adapter and pulling in collaboration code we may not need yet.
+2. **Default Markdown library** for the optional editor companion. Lean: `markdown-it` (more extensible than `marked`, similar size).
+3. **Undo/redo location.** In-core (cleaner UX) vs. host responsibility. Lean: in-core, simple linear history, with a hook for hosts that want to integrate with their own undo stack.
+4. **Markdown renderer contract.** Tight (specific HAST/MDAST shape) vs. loose (host returns any DOM). Lean: loose.
+5. **Partial-load behaviour.** Lean: strict reject on validation failure in v1.
+6. **Internationalisation.** Library has minimal UI strings — likely a `strings` option on construction.
 
 ## References
 
-- JSON Canvas spec 1.0 — https://jsoncanvas.org/spec/1.0
-- JSON Canvas apps & libraries directory — https://jsoncanvas.org/docs/apps/
-- jsoncanvas repository (Obsidian) — https://github.com/obsidianmd/jsoncanvas
-- Obsidian Canvas — https://obsidian.md/canvas
-- Obsidian Canvas help — https://help.obsidian.md/plugins/canvas
-- Advanced Canvas (feature reference, GPL-3.0, not reusable as code) — https://github.com/Developer-Mike/obsidian-advanced-canvas
-- js-draw (substrate candidate) — https://github.com/personalizedrefrigerator/js-draw
-- hesprs/json-canvas-viewer (fork-or-learn-from candidate) — https://github.com/hesprs/json-canvas-viewer
-- Digital-Tvilling/react-jsoncanvas (reference) — https://github.com/Digital-Tvilling/react-jsoncanvas
-- @trbn/jsoncanvas (TS data-model reference) — https://github.com/t128n/jsoncanvas
-- Joplin plugin API (primary host reference) — https://joplinapp.org/api/references/plugin_api/
-- Joplin Visual Workspace issue #15193 — https://github.com/laurent22/joplin/issues/15193
+- [JSON Canvas spec 1.0](https://jsoncanvas.org/spec/1.0)
+- [JSON Canvas apps & libraries directory](https://jsoncanvas.org/docs/apps/)
+- [Obsidian Canvas help](https://help.obsidian.md/plugins/canvas)
+- [js-draw — substrate candidate and parallel-development precedent](https://github.com/personalizedrefrigerator/js-draw)
+- [hesprs/json-canvas-viewer — substrate candidate](https://github.com/hesprs/json-canvas-viewer)
+- [weave.js — substrate candidate](https://github.com/InditexTech/weave-js)
+- [Advanced Canvas — feature reference, GPL-3.0, not reusable as code](https://github.com/Developer-Mike/obsidian-advanced-canvas)
+- [Joplin plugin API](https://joplinapp.org/api/references/plugin_api/)
+- [Joplin Visual Workspace issue #15193](https://github.com/laurent22/joplin/issues/15193)
+- [YesYouKan plugin — editor-replacement pattern reference](https://github.com/joplin/plugin-yesyoukan)
