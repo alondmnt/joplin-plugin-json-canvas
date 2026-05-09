@@ -14,7 +14,7 @@
 // extension is applied to a *viewer-side* copy of the canvas so the
 // canonical canvas (the one we save) stays clean.
 
-import { JSONCanvasViewer } from 'json-canvas-viewer';
+import { JSONCanvasViewer, internal } from 'json-canvas-viewer';
 import type { JSONCanvasViewerInterface } from 'json-canvas-viewer';
 import MarkdownIt from 'markdown-it';
 import { attachDragHandler } from './interaction/drag';
@@ -82,6 +82,7 @@ export class CanvasView {
 		this.canvas = canvas;
 		this.viewerCanvas = this.buildViewerCanvas(canvas);
 		this.viewer.load({ canvas: filledForHesprs(this.viewerCanvas) });
+		this.clearMatchedFileLabels();
 	}
 
 	destroy(): void {
@@ -145,6 +146,45 @@ export class CanvasView {
 			this.rafId = null;
 			this.viewer.refresh();
 		});
+	}
+
+	// Hesprs renders `nodeMap[id].fileName` as a small label above each file
+	// node on the canvas layer. fileName is computed from `node.file` at load
+	// time, so our synthetic `.md` ext leaks into the visible label. Clear
+	// fileName for nodes our renderer claims; the title is already shown
+	// inside the overlay box, so a duplicate label above is just noise.
+	//
+	// Reaches into hesprs's internals via the DI container (per ADR 0001's
+	// "private-API touchpoints in helpers" rule). Wrapped in a try so a
+	// future hesprs version that reshapes the container fails soft.
+	private clearMatchedFileLabels(): void {
+		const renderer = this.fileRenderer;
+		if (!renderer || !this.viewerCanvas) return;
+		try {
+			const container = (
+				this.viewer as unknown as { container: { get: <T>(cls: T) => unknown } }
+			).container;
+			const dataManager = container.get(internal.DataManager) as {
+				data: { nodeMap: Record<string, { fileName?: string }> };
+			};
+			const nodeMap = dataManager.data.nodeMap;
+			let mutated = false;
+			for (const node of this.viewerCanvas.nodes) {
+				if (node.type !== 'file') continue;
+				const original = node.file.endsWith(SYNTH_EXT)
+					? node.file.slice(0, -SYNTH_EXT.length)
+					: node.file;
+				if (!renderer.matches(original)) continue;
+				const entry = nodeMap[node.id];
+				if (entry) {
+					entry.fileName = '';
+					mutated = true;
+				}
+			}
+			if (mutated) this.viewer.refresh();
+		} catch (err) {
+			console.debug('Canvas: could not suppress file label (hesprs internals shifted?)', err);
+		}
 	}
 
 	private buildViewerCanvas(canvas: JSONCanvas): JSONCanvas {
