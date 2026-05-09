@@ -18,7 +18,7 @@ import { JSONCanvasViewer, internal } from 'json-canvas-viewer';
 import type { JSONCanvasViewerInterface } from 'json-canvas-viewer';
 import MarkdownIt from 'markdown-it';
 import { attachDragHandler } from './interaction/drag';
-import type { CanvasFileNode, CanvasNode, JSONCanvas } from './types';
+import type { CanvasFileNode, CanvasLinkNode, CanvasNode, JSONCanvas } from './types';
 
 const SYNTH_EXT = '.md';
 
@@ -31,11 +31,19 @@ export interface FileRenderer {
 	onClick?: (node: CanvasFileNode) => void;
 }
 
+export interface LinkRenderer {
+	/** Render into the overlay's content container; receives the canonical node. */
+	render: (container: HTMLElement, node: CanvasLinkNode) => void;
+	/** Click on a link node's overlay (no drag movement). */
+	onClick?: (node: CanvasLinkNode) => void;
+}
+
 export interface CanvasViewOptions {
 	container: HTMLElement;
 	/** Called on drag-end with the mutated canvas. */
 	onChange?: (canvas: JSONCanvas) => void;
 	fileRenderer?: FileRenderer;
+	linkRenderer?: LinkRenderer;
 }
 
 export class CanvasView {
@@ -50,10 +58,16 @@ export class CanvasView {
 	private readonly detachDrag: () => void;
 	private readonly onChange: (canvas: JSONCanvas) => void;
 	private readonly fileRenderer?: FileRenderer;
+	private readonly linkRenderer?: LinkRenderer;
 
 	constructor(options: CanvasViewOptions) {
 		this.fileRenderer = options.fileRenderer;
+		this.linkRenderer = options.linkRenderer;
 		const md = new MarkdownIt({ html: false, breaks: true, linkify: true });
+		const nodeComponents: Record<string, unknown> = {};
+		if (this.fileRenderer) nodeComponents.markdown = this.markdownComponent;
+		if (this.linkRenderer) nodeComponents.link = this.linkComponent;
+		const hasOverrides = Object.keys(nodeComponents).length > 0;
 		this.viewer = new JSONCanvasViewer({
 			container: options.container,
 			parser: (text: string) => md.render(text),
@@ -61,13 +75,7 @@ export class CanvasView {
 			// hesprs's default `./<basename>` prefixing. Without this, hesprs
 			// would mutate `node.file` on load — a write to our canonical state.
 			noAttachmentRelocation: true,
-			...(this.fileRenderer
-				? {
-						nodeComponents: {
-							markdown: this.markdownComponent,
-						},
-					}
-				: {}),
+			...(hasOverrides ? { nodeComponents } : {}),
 		} as never);
 		this.onChange = options.onChange ?? ((): void => {});
 		this.detachDrag = attachDragHandler({
@@ -136,14 +144,21 @@ export class CanvasView {
 	private handleNodeClick(id: string): void {
 		if (!this.canvas) return;
 		const node = this.canvas.nodes.find((n) => n.id === id);
-		if (!node || node.type !== 'file') return;
-		const renderer = this.fileRenderer;
-		if (!renderer) return;
-		if (!renderer.matches(node.file)) {
-			console.debug('Canvas: clicked file node with unrecognised ref:', node.file);
+		if (!node) return;
+		if (node.type === 'file') {
+			const renderer = this.fileRenderer;
+			if (!renderer) return;
+			if (!renderer.matches(node.file)) {
+				console.debug('Canvas: clicked file node with unrecognised ref:', node.file);
+				return;
+			}
+			renderer.onClick?.(node);
 			return;
 		}
-		renderer.onClick?.(node);
+		if (node.type === 'link') {
+			this.linkRenderer?.onClick?.(node);
+			return;
+		}
 	}
 
 	private scheduleRefresh(): void {
@@ -204,6 +219,21 @@ export class CanvasView {
 		});
 		return { ...canvas, nodes };
 	}
+
+	private linkComponent = ({
+		container,
+		node,
+	}: {
+		container: HTMLElement;
+		content: string;
+		node: { id: string };
+	}): void => {
+		const renderer = this.linkRenderer;
+		if (!renderer || !this.canvas) return;
+		const canon = this.canvas.nodes.find((n) => n.id === node.id);
+		if (!canon || canon.type !== 'link') return;
+		renderer.render(container, canon);
+	};
 
 	private markdownComponent = ({
 		container,
