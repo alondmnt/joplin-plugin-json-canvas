@@ -66,8 +66,9 @@ The drag-to-move spike validated the wrap-and-extend pattern empirically: claimi
 
 ## Status & follow-ups
 
-- **Phase 0c (Joplin webview integration check) still outstanding.** Wrap the prototype in a Joplin plugin shell using `joplin.views.editor.register`; confirm webview loads, no CSP violations, basic interactions work. Do this before declaring the substrate fully committed.
-- The PRD bumps to v0.6 to mark open question #1 as resolved and cite this ADR.
+- **Phase 0c (Joplin webview integration check) ✅ complete (2026-05-09).** Plugin installs, editor toggle works, webview loads without CSP errors, drag/pan/zoom function inside Joplin's webview. One CSS layout bug surfaced and was fixed (`overflow: hidden` + `position: absolute; inset: 0` on root, because Joplin's editor pane has height-by-content layout). Light/dark theme inheritance is a v1 implementation puzzle, not a substrate concern. See [phase 0c findings](../phase0c-joplin-integration.md).
+- Webpack config delta: extra scripts must build with `target: 'web'` and `resolve.conditionNames` including `'import'` so ESM-only packages like `json-canvas-viewer` resolve under webpack's CJS pipeline.
+- The PRD bumped to v0.6 to mark open question #1 resolved and cite this ADR.
 - Spike branch `spike/substrate` is preserved for reference but never merged.
 
 ## References
@@ -75,6 +76,7 @@ The drag-to-move spike validated the wrap-and-extend pattern empirically: claimi
 - [phase 0a notes](../phase0-notes.md) — research, bundle measurements, kill decisions
 - [phase 0b hesprs architecture](../phase0b-hesprs-architecture.md) — source read, markdown-in-node verdict
 - [phase 0b drag spike](../phase0b-drag-spike.md) — wrap-and-extend validation
+- [phase 0c Joplin integration](../phase0c-joplin-integration.md) — plugin shell + webview verification
 - [phase 0 spike scope](../phase0-spike.md) — the original plan this ADR concludes
 - [JSON Canvas spec 1.0](https://jsoncanvas.org/spec/1.0)
 - [json-canvas-viewer on GitHub](https://github.com/hesprs/json-canvas-viewer)
