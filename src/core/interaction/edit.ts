@@ -46,6 +46,13 @@ export interface MountTextNodeOptions {
 	renderView: (container: HTMLElement, text: string) => void;
 	/** Commit text change. Host updates canonical state and schedules save. */
 	onCommit: (newText: string) => void;
+	/**
+	 * Element that receives the dblclick listener. Defaults to `container`.
+	 * Pass an ancestor when the container has sibling overlays (e.g.,
+	 * hesprs's click-layer) that intercept events before they reach the
+	 * content node.
+	 */
+	eventRoot?: HTMLElement;
 	/** Editor implementation. Defaults to textareaEditor. */
 	editorFactory?: TextEditorFactory;
 	/** Idle ms between input and auto-save. Defaults to 500. */
@@ -63,6 +70,7 @@ export function mountTextNode(
 ): MountedTextNode {
 	const editorFactory = options.editorFactory ?? textareaEditor;
 	const debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
+	const eventRoot = options.eventRoot ?? container;
 
 	let mode: 'view' | 'edit' = 'view';
 	let editor: TextEditor | null = null;
@@ -126,14 +134,14 @@ export function mountTextNode(
 		enterEdit();
 	};
 
-	container.addEventListener('dblclick', onDblClick);
+	eventRoot.addEventListener('dblclick', onDblClick);
 	renderView();
 
 	return {
 		destroy(): void {
 			if (destroyed) return;
 			destroyed = true;
-			container.removeEventListener('dblclick', onDblClick);
+			eventRoot.removeEventListener('dblclick', onDblClick);
 			clearDebounce();
 			if (editor) {
 				editor.destroy();

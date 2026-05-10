@@ -303,8 +303,16 @@ export class CanvasView {
 		// View mode renders parsed markdown; double-click swaps in a textarea
 		// (or whatever editor factory the host injected). Read canonical text
 		// fresh each time renderView fires so any external commits land too.
+		//
+		// dblclick attaches to the overlay-container, not to `container`
+		// (which is JCV-content). Hesprs lays out content + click-layer as
+		// siblings, with click-layer on top capturing all pointer events;
+		// content never sees dblclick directly. The shared parent is the
+		// overlay-container, where bubbling lands.
 		const id = node.id;
+		const eventRoot = container.closest<HTMLElement>('.JCV-overlay-container') ?? container;
 		const mounted = mountTextNode(container, {
+			eventRoot,
 			editorFactory: this.textEditorFactory,
 			getText: () => {
 				const cur = this.canvas?.nodes.find((n) => n.id === id);

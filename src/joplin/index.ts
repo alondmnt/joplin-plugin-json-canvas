@@ -8,6 +8,14 @@ import { parseNoteRef } from './joplinRef';
 interface EditorState {
 	noteId: string | null;
 	currentBody: string;
+	/**
+	 * Body string we most recently posted to (or had echoed by) the webview.
+	 * Differs from `currentBody` only across iframe lifetime boundaries: a
+	 * Markdown↔Canvas toggle recreates the iframe, so the new webview has
+	 * never received a load even though `currentBody` is up to date. Reset
+	 * to `''` on `ready` so the next loadFromCurrentNote always (re)posts.
+	 */
+	lastSentBody: string;
 	blockSpan: BlockSpan | null;
 	webviewReady: boolean;
 	saveScheduler: SaveScheduler;
@@ -22,6 +30,7 @@ joplin.plugins.register({
 				const state: EditorState = {
 					noteId: null,
 					currentBody: '',
+					lastSentBody: '',
 					blockSpan: null,
 					webviewReady: false,
 					saveScheduler: null!, // populated below; needs `state` in scope
@@ -43,8 +52,12 @@ joplin.plugins.register({
 						}),
 					onSaved: (savedBody) => {
 						// JSON length changed → recompute blockSpan from the saved
-						// body so the next change writes the right slice.
+						// body so the next change writes the right slice. The
+						// webview already holds this body (it produced the canvas
+						// we just serialised), so update lastSentBody too — the
+						// onUpdate echo for our save can short-circuit reload.
 						state.currentBody = savedBody;
+						state.lastSentBody = savedBody;
 						const reparsed = parseFromBody(savedBody);
 						if (reparsed) state.blockSpan = reparsed.blockSpan;
 					},
@@ -86,13 +99,19 @@ async function loadFromCurrentNote(handle: ViewHandle): Promise<void> {
 	const parsed = parseFromBody(noteRecord.body);
 	if (!parsed) return;
 
-	// Skip reload when the freshly-fetched body matches what we last saved
-	// (and we're still on the same note). Joplin fires onUpdate on our own
-	// save echoes too — without this, every debounced save during inline
-	// text editing would tear the textarea out from under the user. This
-	// is a strict subset of #7's full sync-aware reload; #7 will supersede
-	// it cleanly.
-	if (state.noteId === noteRecord.id && state.currentBody === noteRecord.body) {
+	// Skip reload when the webview already holds this body (same note + we
+	// last posted/saved this exact body to it). Joplin fires onUpdate on our
+	// own save echoes too — without this, every debounced save during inline
+	// text editing would tear the textarea out from under the user.
+	//
+	// `lastSentBody` rather than `currentBody` is the right comparison: a
+	// Canvas↔Markdown toggle recreates the iframe but reuses our EditorState,
+	// so `currentBody` already matches the note even though the new webview
+	// has never received a load. Resetting `lastSentBody` on `ready` makes
+	// the toggle case fall through cleanly.
+	//
+	// Strict subset of #7's full sync-aware reload; #7 will supersede.
+	if (state.noteId === noteRecord.id && state.lastSentBody === noteRecord.body) {
 		return;
 	}
 
@@ -107,6 +126,7 @@ async function loadFromCurrentNote(handle: ViewHandle): Promise<void> {
 		canvas: parsed.canvas,
 		titles,
 	});
+	state.lastSentBody = noteRecord.body;
 }
 
 async function fetchItemTitles(canvas: JSONCanvas): Promise<Record<string, string>> {
@@ -166,9 +186,11 @@ function handleMessage(handle: ViewHandle, message: unknown): void {
 		// Re-fetch and post on every ready, not just the first one. Joplin can
 		// destroy and recreate the webview iframe on Canvas/Markdown editor
 		// toggles — a fresh iframe sends `ready` again and needs the current
-		// canvas posted to its new onMessage handler. Idempotent in the
-		// iframe-stays-alive case (a redundant data.get).
+		// canvas posted to its new onMessage handler. Reset lastSentBody so
+		// the body-match short-circuit in loadFromCurrentNote falls through
+		// for this fresh webview.
 		state.webviewReady = true;
+		state.lastSentBody = '';
 		void loadFromCurrentNote(handle);
 		return;
 	}

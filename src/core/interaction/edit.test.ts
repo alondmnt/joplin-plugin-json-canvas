@@ -12,14 +12,21 @@ interface Harness {
 }
 
 function setup(initial = 'hello'): Harness {
+	// Mimic hesprs's layout: overlay-container > content (sibling of click-layer
+	// in production). dblclick fires on the click-layer in real use, so the
+	// listener must live on the overlay-container ancestor.
+	const overlayContainer = document.createElement('div');
+	overlayContainer.classList.add('JCV-overlay-container');
 	const container = document.createElement('div');
-	document.body.appendChild(container);
+	overlayContainer.appendChild(container);
+	document.body.appendChild(overlayContainer);
 
 	const currentText = { value: initial };
 	const rendered = { calls: [] as string[] };
 	const commits = { calls: [] as string[] };
 
 	const mounted = mountTextNode(container, {
+		eventRoot: overlayContainer,
 		getText: () => currentText.value,
 		renderView: (c, text) => {
 			rendered.calls.push(text);
@@ -83,6 +90,18 @@ describe('mountTextNode — view ↔ edit lifecycle', () => {
 		const ta = h.textareaEl();
 		expect(ta).not.toBeNull();
 		expect(ta!.value).toBe('hello');
+	});
+
+	it('catches dblclick on a sibling of content (e.g., hesprs click-layer)', () => {
+		// In production, hesprs lays out a click-layer DIV as a sibling of
+		// content inside overlay-container. Pointer events fire on the
+		// click-layer, not content. The listener on overlay-container must
+		// catch the dblclick via bubble.
+		const clickLayer = document.createElement('div');
+		clickLayer.className = 'JCV-click-layer';
+		h.container.parentElement!.appendChild(clickLayer);
+		dispatchDblClick(clickLayer);
+		expect(h.textareaEl()).not.toBeNull();
 	});
 
 	it('blur commits the current value and returns to view mode', () => {
