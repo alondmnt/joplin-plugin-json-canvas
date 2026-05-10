@@ -86,6 +86,17 @@ body {
 	overflow: auto;
 }
 
+/* hesprs sets `contain: strict` on the overlay-container, which paint-clips
+ * descendants at the box edge. Without this override, edge handles
+ * positioned outside the box render to nothing. overflow-clip-margin
+ * extends the paint clip rect so handles (and any future outside-the-box
+ * affordances) can be drawn up to 12px outside. The selector matches
+ * hesprs's specificity (.JSON-Canvas-Viewer .JCV-overlay-container) so
+ * our rule actually overrides theirs. */
+.JSON-Canvas-Viewer .JCV-overlay-container {
+	overflow-clip-margin: 12px;
+}
+
 /* Edge-creation handles. One per side, mounted as direct children of the
  * overlay-container by edge.ts. Hidden by default; faded in on overlay
  * hover so the affordance only appears when the user is paying attention
