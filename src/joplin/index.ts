@@ -1,5 +1,6 @@
 import joplin from 'api';
 import { parseFromBody, serializeToBody } from '../core/format';
+import { createSaveScheduler, type SaveScheduler } from '../core/saveScheduler';
 import type { ViewHandle } from 'api/types';
 import type { BlockSpan, JSONCanvas } from '../core/types';
 import { parseNoteRef } from './joplinRef';
@@ -9,6 +10,7 @@ interface EditorState {
 	currentBody: string;
 	blockSpan: BlockSpan | null;
 	webviewReady: boolean;
+	saveScheduler: SaveScheduler;
 }
 
 const editorState = new Map<ViewHandle, EditorState>();
@@ -17,12 +19,34 @@ joplin.plugins.register({
 	onStart: async () => {
 		await joplin.views.editors.register('canvasEditor', {
 			onSetup: async (handle) => {
-				editorState.set(handle, {
+				const state: EditorState = {
 					noteId: null,
 					currentBody: '',
 					blockSpan: null,
 					webviewReady: false,
+					saveScheduler: null!, // populated below; needs `state` in scope
+				};
+				state.saveScheduler = createSaveScheduler({
+					getContext: () => {
+						if (!state.noteId || !state.blockSpan) return null;
+						return { noteId: state.noteId, body: state.currentBody };
+					},
+					serialise: (currentBody, canvas) =>
+						serializeToBody(currentBody, state.blockSpan!, canvas),
+					save: (ctx, newBody) =>
+						joplin.views.editors.saveNote(handle, {
+							noteId: ctx.noteId,
+							body: newBody,
+						}),
+					onSaved: (savedBody) => {
+						// JSON length changed → recompute blockSpan from the saved
+						// body so the next change writes the right slice.
+						state.currentBody = savedBody;
+						const reparsed = parseFromBody(savedBody);
+						if (reparsed) state.blockSpan = reparsed.blockSpan;
+					},
 				});
+				editorState.set(handle, state);
 
 				await joplin.views.editors.setHtml(handle, '<div id="root"></div>');
 				await joplin.views.editors.addScript(handle, './joplin/webview.js');
@@ -137,7 +161,7 @@ function handleMessage(handle: ViewHandle, message: unknown): void {
 	}
 
 	if (m.type === 'change' && isJSONCanvas(m.canvas)) {
-		void persistChange(handle, m.canvas);
+		state.saveScheduler.schedule(m.canvas);
 		return;
 	}
 
@@ -150,23 +174,6 @@ function handleMessage(handle: ViewHandle, message: unknown): void {
 		void joplin.commands.execute('openItem', link);
 		return;
 	}
-}
-
-async function persistChange(handle: ViewHandle, canvas: JSONCanvas): Promise<void> {
-	const state = editorState.get(handle);
-	if (!state || !state.noteId || !state.blockSpan) return;
-
-	const newBody = serializeToBody(state.currentBody, state.blockSpan, canvas);
-	await joplin.views.editors.saveNote(handle, {
-		noteId: state.noteId,
-		body: newBody,
-	});
-
-	// JSON length changed → recompute blockSpan from the saved body so the
-	// next change writes the right slice.
-	state.currentBody = newBody;
-	const reparsed = parseFromBody(newBody);
-	if (reparsed) state.blockSpan = reparsed.blockSpan;
 }
 
 function isJSONCanvas(value: unknown): value is JSONCanvas {
