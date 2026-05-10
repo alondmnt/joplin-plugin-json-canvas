@@ -97,21 +97,24 @@ async function fetchItemTitles(canvas: JSONCanvas): Promise<Record<string, strin
 }
 
 async function resolveItemTitle(id: string): Promise<string | null> {
-	try {
+	// itemType returns null for unknown ids (no throw), so one call discriminates
+	// notes vs resources without probe-and-catch. ModelType: Note=1, Resource=4.
+	const type = (await joplin.data.itemType(id)) as number | null;
+	if (type === 1) {
 		const note = (await joplin.data.get(['notes', id], { fields: ['title'] })) as {
 			title?: string;
 		};
-		if (note?.title) return note.title;
-	} catch {
-		// not a note; try resource
+		return note?.title || null;
 	}
-	try {
-		const resource = (await joplin.data.get(['resources', id], { fields: ['title'] })) as {
-			title?: string;
-		};
-		if (resource?.title) return resource.title;
-	} catch {
-		// not a resource either
+	if (type === 4) {
+		// Resources have both `title` and `filename`. Joplin populates `title`
+		// from the original filename on attach, but programmatically created
+		// resources often leave it empty — fall back to `filename` so the
+		// overlay shows something user-recognisable instead of the bare id.
+		const resource = (await joplin.data.get(['resources', id], {
+			fields: ['title', 'filename'],
+		})) as { title?: string; filename?: string };
+		return resource?.title || resource?.filename || null;
 	}
 	return null;
 }
