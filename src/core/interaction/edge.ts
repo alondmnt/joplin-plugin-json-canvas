@@ -47,8 +47,12 @@ interface GestureState {
 
 export function attachEdgeGesture(options: EdgeGestureOptions): () => void {
 	const handles: HTMLElement[] = [];
-	const overlays = options.root.querySelectorAll<HTMLElement>(OVERLAY_SELECTOR);
-	for (const overlay of overlays) {
+
+	const mountHandlesFor = (overlay: HTMLElement): void => {
+		// Idempotent: hesprs may re-emit a mutation for an overlay that we've
+		// already decorated (e.g., during a pan that re-orders children).
+		if (overlay.dataset.edgeHandlesMounted === '1') return;
+		overlay.dataset.edgeHandlesMounted = '1';
 		for (const side of SIDES) {
 			const handle = document.createElement('div');
 			handle.classList.add(HANDLE_CLASS, `${HANDLE_CLASS}-${side}`);
@@ -56,7 +60,34 @@ export function attachEdgeGesture(options: EdgeGestureOptions): () => void {
 			overlay.appendChild(handle);
 			handles.push(handle);
 		}
+	};
+
+	// Mount on any overlays already in the DOM at attach-time.
+	for (const overlay of options.root.querySelectorAll<HTMLElement>(OVERLAY_SELECTOR)) {
+		mountHandlesFor(overlay);
 	}
+
+	// hesprs's renderOverlays creates text-node overlays asynchronously: each
+	// node iteration is wrapped in `async t => { await e(t.ref) }`, and the
+	// text branch awaits `this.parse(text)` before calling createOverlay. The
+	// `await` schedules a microtask boundary even when the parser is sync,
+	// so by the time viewer.load returns the file/link overlays are mounted
+	// but text overlays are not — they appear one microtask later. A sync
+	// querySelectorAll at attach-time would miss them entirely. MutationObserver
+	// catches them when they actually land, without coupling us to hesprs's
+	// internal timing or having to guess at deferral via setTimeout/rAF.
+	const observer = new MutationObserver((mutations) => {
+		for (const m of mutations) {
+			for (const added of m.addedNodes) {
+				if (!(added instanceof HTMLElement)) continue;
+				if (added.matches(OVERLAY_SELECTOR)) mountHandlesFor(added);
+				for (const nested of added.querySelectorAll<HTMLElement>(OVERLAY_SELECTOR)) {
+					mountHandlesFor(nested);
+				}
+			}
+		}
+	});
+	observer.observe(options.root, { childList: true, subtree: true });
 
 	let gesture: GestureState | null = null;
 
@@ -143,6 +174,7 @@ export function attachEdgeGesture(options: EdgeGestureOptions): () => void {
 	document.addEventListener('keydown', onKeyDown, opts);
 
 	return (): void => {
+		observer.disconnect();
 		document.removeEventListener('pointerdown', onPointerDown, opts);
 		document.removeEventListener('pointermove', onPointerMove, opts);
 		document.removeEventListener('pointerup', onPointerUp, opts);

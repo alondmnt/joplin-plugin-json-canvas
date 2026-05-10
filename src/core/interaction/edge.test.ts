@@ -117,6 +117,31 @@ describe('attachEdgeGesture — handle mounting', () => {
 		// Re-attach a no-op detach so afterEach's detach() is harmless.
 		h.detach = () => {};
 	});
+
+	it('mounts handles on overlays added after attach (async overlay creation)', async () => {
+		// hesprs creates text-node overlays one microtask after viewer.load
+		// returns. Mirror that: attach with a single sync-mounted overlay,
+		// then add a fresh overlay later and confirm it gets handles too.
+		// MutationObserver delivers callbacks asynchronously, so we wait a
+		// tick before asserting.
+		const lateOverlay = document.createElement('div');
+		lateOverlay.classList.add('JCV-overlay-container');
+		lateOverlay.id = 'n-late';
+		h.root.appendChild(lateOverlay);
+
+		await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+		expect(lateOverlay.querySelectorAll('.JCV-edge-handle')).toHaveLength(4);
+	});
+
+	it('does not double-mount handles when the same overlay is observed twice', async () => {
+		const overlay = h.overlays.n1;
+		const before = overlay.querySelectorAll('.JCV-edge-handle').length;
+		// Force a mutation that contains the same overlay (re-append).
+		h.root.appendChild(overlay);
+		await new Promise<void>((resolve) => setTimeout(resolve, 0));
+		expect(overlay.querySelectorAll('.JCV-edge-handle')).toHaveLength(before);
+	});
 });
 
 describe('attachEdgeGesture — gesture lifecycle', () => {
