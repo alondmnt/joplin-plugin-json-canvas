@@ -18,8 +18,9 @@ import { JSONCanvasViewer, internal } from 'json-canvas-viewer';
 import type { JSONCanvasViewerInterface } from 'json-canvas-viewer';
 import MarkdownIt from 'markdown-it';
 import { attachDragHandler } from './interaction/drag';
+import { attachEdgeGesture } from './interaction/edge';
 import { mountTextNode, type MountedTextNode, type TextEditorFactory } from './interaction/edit';
-import type { CanvasFileNode, CanvasLinkNode, CanvasNode, JSONCanvas } from './types';
+import type { CanvasEdge, CanvasFileNode, CanvasLinkNode, CanvasNode, JSONCanvas } from './types';
 
 const SYNTH_EXT = '.md';
 
@@ -74,6 +75,10 @@ export class CanvasView {
 	// load() and destroy()) so pending debounce timers don't fire commits
 	// against a stale canvas.
 	private mountedTextNodes: MountedTextNode[] = [];
+	// Edge-creation handles live on each overlay-container, so the gesture
+	// is re-attached per-load alongside the viewer recreate. No-op default
+	// covers the pre-first-load and post-detach windows.
+	private detachEdge: () => void = () => {};
 
 	constructor(options: CanvasViewOptions) {
 		this.container = options.container;
@@ -110,6 +115,7 @@ export class CanvasView {
 		// through a non-canvas note). Recreating here matches that cost and
 		// makes every load behave like a first load.
 		if (this.viewerLoaded) {
+			this.detachEdge();
 			this.tearDownTextNodes();
 			this.viewer.dispose();
 			this.viewer = this.createViewer();
@@ -117,6 +123,13 @@ export class CanvasView {
 		this.viewer.load({ canvas: filledForHesprs(this.viewerCanvas) });
 		this.viewerLoaded = true;
 		this.clearMatchedFileLabels();
+		// Mount edge handles after the overlays exist; the gesture's pointer
+		// listeners are re-attached fresh each load so we never have two
+		// generations of listeners running concurrently.
+		this.detachEdge = attachEdgeGesture({
+			root: this.container,
+			onCommit: (edge) => this.handleEdgeCommit(edge),
+		});
 	}
 
 	private tearDownTextNodes(): void {
@@ -137,6 +150,7 @@ export class CanvasView {
 	}
 
 	destroy(): void {
+		this.detachEdge();
 		this.tearDownTextNodes();
 		this.detachDrag();
 		if (this.rafId !== null) cancelAnimationFrame(this.rafId);
@@ -198,6 +212,19 @@ export class CanvasView {
 		// host saves; canonical state is already correct.
 		if (!this.canvas) return;
 		this.onChange(this.canvas);
+	}
+
+	private handleEdgeCommit(edge: CanvasEdge): void {
+		// New edge: append to canonical state, fire onChange so the host saves,
+		// then trigger a full reload so hesprs paints the new edge. Refresh
+		// alone wouldn't pick it up — hesprs's data manager is seeded by load,
+		// not refresh, so a structural change needs the full path. The
+		// dispose-recreate in load() is heavier than a refresh but matches the
+		// existing cost we already pay on canvas→canvas switches.
+		if (!this.canvas) return;
+		this.canvas.edges.push(edge);
+		this.onChange(this.canvas);
+		this.load(this.canvas);
 	}
 
 	private handleNodeClick(id: string): void {

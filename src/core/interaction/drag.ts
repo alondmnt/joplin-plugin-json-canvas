@@ -58,6 +58,14 @@ export function attachDragHandler(options: DragHandlerOptions): () => void {
 			e.stopPropagation();
 			return;
 		}
+		// Edge-creation handles own pointerdown for the connector gesture.
+		// Step aside without stopPropagation so edge.ts's capture-phase
+		// listener still sees the event. The CSS class is the contract;
+		// importing a predicate from edge.ts would couple the two modules
+		// for one line of logic.
+		if (target && target.classList.contains('JCV-edge-handle')) {
+			return;
+		}
 		const overlay = findOverlay(e.target);
 		if (!overlay) return;
 		const node = options.getNode(overlay.id);

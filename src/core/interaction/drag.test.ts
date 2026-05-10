@@ -180,3 +180,29 @@ describe('attachDragHandler — form-control filter', () => {
 		expect(h.onCommit).toHaveBeenCalledTimes(1);
 	});
 });
+
+describe('attachDragHandler — edge-handle filter', () => {
+	let h: Harness;
+	let handle: HTMLElement;
+
+	beforeEach(() => {
+		h = setup();
+		handle = document.createElement('div');
+		handle.classList.add('JCV-edge-handle');
+		h.overlay.appendChild(handle);
+	});
+
+	afterEach(() => {
+		h.detach();
+		document.body.innerHTML = '';
+	});
+
+	it('does not start drag when pointerdown originates on an edge handle', () => {
+		dispatchPointer(handle, 'pointerdown', 0, 0);
+		dispatchPointer(handle, 'pointermove', 50, 50);
+		dispatchPointer(handle, 'pointerup');
+		expect(h.onMove).not.toHaveBeenCalled();
+		expect(h.onCommit).not.toHaveBeenCalled();
+		expect(h.onClick).not.toHaveBeenCalled();
+	});
+});
