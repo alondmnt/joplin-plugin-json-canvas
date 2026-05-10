@@ -17,6 +17,8 @@
 		"dev": "concurrently \"webpack --watch --env joplin-plugin-config=buildMain\" \"webpack --watch --env joplin-plugin-config=buildExtraScripts\"",
 		"lint": "eslint . --ext .ts && prettier --check . && tsc --noEmit",
 		"lint:fix": "eslint . --ext .ts --fix && prettier --write .",
+		"test": "vitest run",
+		"check": "npm run lint && npm test",
 		"prepare": "npm run dist",
 		"updateVersion": "webpack --env joplin-plugin-config=updateVersion"
 	},
@@ -44,6 +46,7 @@
 		"tar": "^6.1.11",
 		"ts-loader": "^9.5.0",
 		"typescript": "^5.5.0",
+		"vitest": "^3.2.4",
 		"webpack": "^5.94.0",
 		"webpack-cli": "^5.1.4"
 	},
