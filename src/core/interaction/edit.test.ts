@@ -115,16 +115,15 @@ describe('mountTextNode — view ↔ edit lifecycle', () => {
 		expect(h.rendered.calls.at(-1)).toBe('hello world');
 	});
 
-	it('Esc closes the editor without firing onCommit', () => {
+	it('Esc collapses to blur — commits and closes', () => {
 		dispatchDblClick(h.container);
 		const ta = h.textareaEl()!;
 		ta.value = 'hello world';
 		dispatchKeyDown(ta, 'Escape');
-		expect(h.commits.calls).toEqual([]);
+		// Esc fires ta.blur() → blur listener → onCommit. Same as click-out.
+		expect(h.commits.calls).toEqual(['hello world']);
 		expect(h.textareaEl()).toBeNull();
-		// View re-rendered. Per design, Esc shows last canonical text — which
-		// in this test was never updated, so it shows the initial 'hello'.
-		expect(h.rendered.calls.at(-1)).toBe('hello');
+		expect(h.rendered.calls.at(-1)).toBe('hello world');
 	});
 });
 
@@ -216,7 +215,6 @@ describe('textareaEditor — caret placement', () => {
 			const editor = textareaEditor(container, 'hello world', {
 				onInput: () => {},
 				onCommit: () => {},
-				onCancel: () => {},
 			});
 			editor.focus();
 			const ta = container.querySelector('textarea')!;

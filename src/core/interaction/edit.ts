@@ -2,26 +2,27 @@
 //
 // Lifecycle:
 //   view ── dblclick ──▶ edit ── blur ──▶ commit + view
-//                          └── Esc ─────▶ view (no extra save)
+//                          └── Esc ─────▶ blur (same path)
 //
-// Esc closes the editor; any debounced saves that fired during typing stay
-// persisted. Esc is not a session-level undo. View on close re-reads the
-// canonical text via getText() so it reflects the latest committed state.
+// Esc collapses to blur — both close the editor and commit the current
+// value. We considered Esc-as-revert, but rolling back debounced auto-saves
+// from a single keystroke is a footgun: muscle-memory Esc presses would
+// silently discard work. Explicit revert belongs to a future Undo command
+// (PRD post-MVP); within the textarea, native Cmd/Ctrl+Z already lets the
+// user undo their typing before blur.
 //
 // The TextEditor seam is intentionally thin: the editor owns its DOM and
-// raw input, the policy (dblclick-to-enter, blur-to-commit, Esc-to-close,
-// debounce) lives in mountTextNode. Swapping textarea → CodeMirror later
-// is a different `editorFactory` — no rewire of the policy layer.
+// raw input, the policy (dblclick-to-enter, blur-to-commit, debounce) lives
+// in mountTextNode. Swapping textarea → CodeMirror later is a different
+// `editorFactory` — no rewire of the policy layer.
 
 const DEFAULT_DEBOUNCE_MS = 500;
 
 export interface TextEditorCallbacks {
 	/** Fires on every input event. mountTextNode debounces save. */
 	onInput: () => void;
-	/** Fires when the editor signals commit (e.g., blur). */
+	/** Fires when the editor signals close (e.g., blur, Esc). */
 	onCommit: () => void;
-	/** Fires when the editor signals cancel (e.g., Esc). */
-	onCancel: () => void;
 }
 
 export interface TextEditor {
@@ -102,16 +103,13 @@ export function mountTextNode(
 				}, debounceMs);
 			},
 			onCommit: () => {
-				// Blur fires here. Flush any pending debounce as a final
-				// commit so we don't lose the last keystrokes between the
-				// debounce window and blur.
+				// Fires on blur (and on Esc, which the editor maps to blur).
+				// Flush any pending debounce as a final commit so we don't
+				// lose the last keystrokes between the debounce window and
+				// the close.
 				const value = editor?.getValue() ?? '';
 				clearDebounce();
 				if (editor && !destroyed) options.onCommit(value);
-				exitEdit();
-			},
-			onCancel: () => {
-				clearDebounce();
 				exitEdit();
 			},
 		});
@@ -169,7 +167,9 @@ export const textareaEditor: TextEditorFactory = (container, initialText, callba
 		if (ke.key === 'Escape') {
 			ke.preventDefault();
 			ke.stopPropagation();
-			callbacks.onCancel();
+			// Map Esc to blur — same path as click-outside, fires onCommit
+			// via the blur listener.
+			ta.blur();
 		}
 	};
 
