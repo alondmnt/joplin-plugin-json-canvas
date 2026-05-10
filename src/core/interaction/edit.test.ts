@@ -189,21 +189,57 @@ describe('mountTextNode — debounced auto-save during typing', () => {
 });
 
 describe('mountTextNode — destroy', () => {
-	it('clears pending debounce so commits do not fire after destroy', () => {
+	beforeEach(() => {
 		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		document.body.innerHTML = '';
+	});
+
+	it('flushes pending debounced typing as a final commit on destroy', () => {
+		// The host can tear down the editor for structural reasons (edge
+		// creation reload, canvas→canvas switch, future delete-node) while
+		// the user is mid-debounce. Without flush, those keystrokes are
+		// lost.
 		const h = setup();
-		try {
-			dispatchDblClick(h.container);
-			const ta = h.textareaEl()!;
-			ta.value = 'abc';
-			dispatchInput(ta);
-			h.mounted.destroy();
-			vi.advanceTimersByTime(1000);
-			expect(h.commits.calls).toEqual([]);
-		} finally {
-			vi.useRealTimers();
-			document.body.innerHTML = '';
-		}
+		dispatchDblClick(h.container);
+		const ta = h.textareaEl()!;
+		ta.value = 'abc';
+		dispatchInput(ta);
+		// Pending debounce has not fired yet.
+		expect(h.commits.calls).toEqual([]);
+
+		h.mounted.destroy();
+		expect(h.commits.calls).toEqual(['abc']);
+
+		// And the queued timer must not fire a duplicate commit afterwards.
+		vi.advanceTimersByTime(1000);
+		expect(h.commits.calls).toEqual(['abc']);
+	});
+
+	it('does not fire a spurious commit when destroyed with no pending debounce', () => {
+		const h = setup();
+		// Never opened the editor — view mode only.
+		h.mounted.destroy();
+		expect(h.commits.calls).toEqual([]);
+	});
+
+	it('does not double-commit when destroy follows a blur', () => {
+		// blur path commits and clears the debounce, then destroy on top of
+		// that closes the dblclick listener — destroy should see no pending
+		// timer and skip the flush.
+		const h = setup();
+		dispatchDblClick(h.container);
+		const ta = h.textareaEl()!;
+		ta.value = 'abc';
+		dispatchInput(ta);
+		dispatchBlur(ta);
+		expect(h.commits.calls).toEqual(['abc']);
+
+		h.mounted.destroy();
+		expect(h.commits.calls).toEqual(['abc']);
 	});
 });
 

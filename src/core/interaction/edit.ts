@@ -140,7 +140,19 @@ export function mountTextNode(
 			if (destroyed) return;
 			destroyed = true;
 			eventRoot.removeEventListener('dblclick', onDblClick);
-			clearDebounce();
+			// Flush a pending debounced save before tearing down — otherwise
+			// keystrokes typed inside the debounce window are lost when the
+			// host removes the editor for a structural reason (edge creation
+			// reload, canvas→canvas switch, future delete-node). The blur
+			// path already commits and clears the debounce, so a clean
+			// teardown (no pending timer) flushes nothing — no double-commit.
+			if (debounceTimer !== null && editor) {
+				const value = editor.getValue();
+				clearDebounce();
+				options.onCommit(value);
+			} else {
+				clearDebounce();
+			}
 			if (editor) {
 				editor.destroy();
 				editor = null;
