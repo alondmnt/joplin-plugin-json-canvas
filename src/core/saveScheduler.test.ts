@@ -7,6 +7,8 @@ const mkCanvas = (id: string): JSONCanvas => ({
 	edges: [],
 });
 
+const stubCtx = () => ({ noteId: 'n', body: 'BODY', blockSpan: { start: 0, end: 0 } });
+
 interface Harness {
 	scheduler: ReturnType<typeof createSaveScheduler>;
 	saved: string[];
@@ -15,8 +17,8 @@ interface Harness {
 function makeHarness(): Harness {
 	const saved: string[] = [];
 	const scheduler = createSaveScheduler({
-		getContext: () => ({ noteId: 'n', body: 'BODY' }),
-		serialise: (_body, canvas) => `s:${canvas.nodes[0].id}`,
+		getContext: stubCtx,
+		serialise: (_ctx, canvas) => `s:${canvas.nodes[0].id}`,
 		save: async (_ctx, body) => {
 			saved.push(body);
 		},
@@ -44,8 +46,8 @@ describe('createSaveScheduler', () => {
 		});
 
 		const scheduler = createSaveScheduler({
-			getContext: () => ({ noteId: 'n', body: 'BODY' }),
-			serialise: (_b, c) => `s:${c.nodes[0].id}`,
+			getContext: stubCtx,
+			serialise: (_ctx, c) => `s:${c.nodes[0].id}`,
 			save: async (_ctx, body) => {
 				saveCount++;
 				if (saveCount === 1) await firstGate;
@@ -88,8 +90,8 @@ describe('createSaveScheduler', () => {
 		});
 
 		const scheduler = createSaveScheduler({
-			getContext: () => ({ noteId: 'n', body: 'BODY' }),
-			serialise: (_b, c) => `s:${c.nodes[0].id}`,
+			getContext: stubCtx,
+			serialise: (_ctx, c) => `s:${c.nodes[0].id}`,
 			save: async (_ctx, body) => {
 				saveCount++;
 				if (saveCount === 1) {
@@ -117,8 +119,8 @@ describe('createSaveScheduler', () => {
 	it('passes the latest body through onSaved for blockSpan recompute', async () => {
 		const seenSavedBodies: string[] = [];
 		const scheduler = createSaveScheduler({
-			getContext: () => ({ noteId: 'n', body: 'BODY' }),
-			serialise: (_b, c) => `s:${c.nodes[0].id}`,
+			getContext: stubCtx,
+			serialise: (_ctx, c) => `s:${c.nodes[0].id}`,
 			save: async () => {},
 			onSaved: (body) => seenSavedBodies.push(body),
 		});

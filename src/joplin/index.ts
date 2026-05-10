@@ -29,10 +29,13 @@ joplin.plugins.register({
 				state.saveScheduler = createSaveScheduler({
 					getContext: () => {
 						if (!state.noteId || !state.blockSpan) return null;
-						return { noteId: state.noteId, body: state.currentBody };
+						return {
+							noteId: state.noteId,
+							body: state.currentBody,
+							blockSpan: state.blockSpan,
+						};
 					},
-					serialise: (currentBody, canvas) =>
-						serializeToBody(currentBody, state.blockSpan!, canvas),
+					serialise: (ctx, canvas) => serializeToBody(ctx.body, ctx.blockSpan, canvas),
 					save: (ctx, newBody) =>
 						joplin.views.editors.saveNote(handle, {
 							noteId: ctx.noteId,
