@@ -141,12 +141,13 @@ function handleMessage(handle: ViewHandle, message: unknown): void {
 		return;
 	}
 
-	if (m.type === 'openItem' && typeof (m as { link?: unknown }).link === 'string') {
+	const link = (m as { link?: unknown }).link;
+	if (m.type === 'openItem' && typeof link === 'string') {
 		// Joplin's openItem routes notes (`:/<id>`), resources (`:/<id>`),
 		// and external URLs (`http(s)://...`) through one entry point; the
 		// webview validates the shape so we don't surface Joplin's error
 		// dialog for canvas-author typos.
-		void joplin.commands.execute('openItem', (m as { link: string }).link);
+		void joplin.commands.execute('openItem', link);
 		return;
 	}
 }

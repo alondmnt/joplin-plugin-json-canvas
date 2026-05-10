@@ -245,7 +245,6 @@ export class CanvasView {
 		node,
 	}: {
 		container: HTMLElement;
-		content: string;
 		node: { id: string };
 	}): void => {
 		const renderer = this.linkRenderer;
