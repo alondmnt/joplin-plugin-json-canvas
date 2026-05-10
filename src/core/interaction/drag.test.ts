@@ -146,3 +146,37 @@ describe('attachDragHandler — pointercancel', () => {
 		expect(h.onCancel).not.toHaveBeenCalled();
 	});
 });
+
+describe('attachDragHandler — form-control filter', () => {
+	let h: Harness;
+	let textarea: HTMLTextAreaElement;
+
+	beforeEach(() => {
+		h = setup();
+		textarea = document.createElement('textarea');
+		h.overlay.appendChild(textarea);
+	});
+
+	afterEach(() => {
+		h.detach();
+		document.body.innerHTML = '';
+	});
+
+	it('does not start drag when pointerdown originates on a textarea', () => {
+		dispatchPointer(textarea, 'pointerdown', 0, 0);
+		dispatchPointer(textarea, 'pointermove', 50, 50);
+		dispatchPointer(textarea, 'pointerup');
+		// No drag tracking → no onMove, no onCommit (and no onClick fallback,
+		// because no drag was even started for this gesture).
+		expect(h.onMove).not.toHaveBeenCalled();
+		expect(h.onCommit).not.toHaveBeenCalled();
+		expect(h.onClick).not.toHaveBeenCalled();
+	});
+
+	it('still starts drag when pointerdown originates outside the form control', () => {
+		dispatchPointer(h.overlay, 'pointerdown', 0, 0);
+		dispatchPointer(h.overlay, 'pointermove', 30, 40);
+		dispatchPointer(h.overlay, 'pointerup');
+		expect(h.onCommit).toHaveBeenCalledTimes(1);
+	});
+});

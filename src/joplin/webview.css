@@ -53,3 +53,27 @@ body {
 .JCV-link-pill:hover .JCV-link-pill-label {
 	text-decoration: underline;
 }
+
+/* Inline text-node editing. Textarea fills the overlay's content slot and
+ * inherits Joplin's editor colours via CSS variables; if the source overflows
+ * the node's fixed bounds, scroll inside instead of resizing the node. */
+.JCV-text-editing {
+	padding: 0;
+}
+
+.JCV-text-editor {
+	width: 100%;
+	height: 100%;
+	box-sizing: border-box;
+	border: none;
+	outline: none;
+	resize: none;
+	padding: 8px;
+	margin: 0;
+	font-family: var(--joplin-font-family, inherit);
+	font-size: 14px;
+	line-height: 1.4;
+	color: var(--joplin-color, inherit);
+	background: var(--joplin-background-color, transparent);
+	overflow: auto;
+}

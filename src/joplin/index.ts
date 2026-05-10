@@ -86,6 +86,16 @@ async function loadFromCurrentNote(handle: ViewHandle): Promise<void> {
 	const parsed = parseFromBody(noteRecord.body);
 	if (!parsed) return;
 
+	// Skip reload when the freshly-fetched body matches what we last saved
+	// (and we're still on the same note). Joplin fires onUpdate on our own
+	// save echoes too — without this, every debounced save during inline
+	// text editing would tear the textarea out from under the user. This
+	// is a strict subset of #7's full sync-aware reload; #7 will supersede
+	// it cleanly.
+	if (state.noteId === noteRecord.id && state.currentBody === noteRecord.body) {
+		return;
+	}
+
 	state.noteId = noteRecord.id;
 	state.currentBody = noteRecord.body;
 	state.blockSpan = parsed.blockSpan;

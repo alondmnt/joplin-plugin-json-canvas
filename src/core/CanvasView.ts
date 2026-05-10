@@ -18,6 +18,7 @@ import { JSONCanvasViewer, internal } from 'json-canvas-viewer';
 import type { JSONCanvasViewerInterface } from 'json-canvas-viewer';
 import MarkdownIt from 'markdown-it';
 import { attachDragHandler } from './interaction/drag';
+import { mountTextNode, type MountedTextNode, type TextEditorFactory } from './interaction/edit';
 import type { CanvasFileNode, CanvasLinkNode, CanvasNode, JSONCanvas } from './types';
 
 const SYNTH_EXT = '.md';
@@ -40,10 +41,15 @@ export interface LinkRenderer {
 
 export interface CanvasViewOptions {
 	container: HTMLElement;
-	/** Called on drag-end with the mutated canvas. */
+	/** Called on drag-end or text-edit commit with the mutated canvas. */
 	onChange?: (canvas: JSONCanvas) => void;
 	fileRenderer?: FileRenderer;
 	linkRenderer?: LinkRenderer;
+	/**
+	 * Editor implementation for inline text-node editing. Defaults to a
+	 * `<textarea>`. Override to swap in CodeMirror or similar later.
+	 */
+	textEditorFactory?: TextEditorFactory;
 }
 
 export class CanvasView {
@@ -63,15 +69,26 @@ export class CanvasView {
 	private readonly onChange: (canvas: JSONCanvas) => void;
 	private readonly fileRenderer?: FileRenderer;
 	private readonly linkRenderer?: LinkRenderer;
+	private readonly textEditorFactory?: TextEditorFactory;
+	// Mounted editors must be torn down before the viewer is disposed (in
+	// load() and destroy()) so pending debounce timers don't fire commits
+	// against a stale canvas.
+	private mountedTextNodes: MountedTextNode[] = [];
 
 	constructor(options: CanvasViewOptions) {
 		this.container = options.container;
 		this.fileRenderer = options.fileRenderer;
 		this.linkRenderer = options.linkRenderer;
+		this.textEditorFactory = options.textEditorFactory;
 		this.md = new MarkdownIt({ html: false, breaks: true, linkify: true });
 		this.nodeComponents = {};
 		if (this.fileRenderer) this.nodeComponents.markdown = this.markdownComponent;
 		if (this.linkRenderer) this.nodeComponents.link = this.linkComponent;
+		// Always override the text slot: hesprs's default does
+		// `innerHTML = parsedHTML` once at overlay creation, with no path to
+		// re-render after a text edit. Our component owns the view↔edit
+		// lifecycle.
+		this.nodeComponents.text = this.textComponent;
 		this.viewer = this.createViewer();
 		this.onChange = options.onChange ?? ((): void => {});
 		this.detachDrag = attachDragHandler({
@@ -93,6 +110,7 @@ export class CanvasView {
 		// through a non-canvas note). Recreating here matches that cost and
 		// makes every load behave like a first load.
 		if (this.viewerLoaded) {
+			this.tearDownTextNodes();
 			this.viewer.dispose();
 			this.viewer = this.createViewer();
 		}
@@ -101,8 +119,12 @@ export class CanvasView {
 		this.clearMatchedFileLabels();
 	}
 
+	private tearDownTextNodes(): void {
+		for (const m of this.mountedTextNodes) m.destroy();
+		this.mountedTextNodes = [];
+	}
+
 	private createViewer(): JSONCanvasViewerInterface {
-		const hasOverrides = Object.keys(this.nodeComponents).length > 0;
 		return new JSONCanvasViewer({
 			container: this.container,
 			parser: (text: string) => this.md.render(text),
@@ -110,11 +132,12 @@ export class CanvasView {
 			// hesprs's default `./<basename>` prefixing. Without this, hesprs
 			// would mutate `node.file` on load — a write to our canonical state.
 			noAttachmentRelocation: true,
-			...(hasOverrides ? { nodeComponents: this.nodeComponents } : {}),
+			nodeComponents: this.nodeComponents,
 		} as never);
 	}
 
 	destroy(): void {
+		this.tearDownTextNodes();
 		this.detachDrag();
 		if (this.rafId !== null) cancelAnimationFrame(this.rafId);
 		this.viewer.dispose();
@@ -268,6 +291,44 @@ export class CanvasView {
 		const canon = this.canvas.nodes.find((n) => n.id === node.id);
 		if (!canon || canon.type !== 'link') return;
 		renderer.render(container, canon);
+	};
+
+	private textComponent = ({
+		container,
+		node,
+	}: {
+		container: HTMLElement;
+		node: { id: string };
+	}): void => {
+		// View mode renders parsed markdown; double-click swaps in a textarea
+		// (or whatever editor factory the host injected). Read canonical text
+		// fresh each time renderView fires so any external commits land too.
+		const id = node.id;
+		const mounted = mountTextNode(container, {
+			editorFactory: this.textEditorFactory,
+			getText: () => {
+				const cur = this.canvas?.nodes.find((n) => n.id === id);
+				return cur && cur.type === 'text' ? cur.text : '';
+			},
+			renderView: (c, text) => {
+				c.classList.add('JCV-markdown-content');
+				const inner = document.createElement('div');
+				inner.classList.add('JCV-parsed-content-wrapper');
+				inner.innerHTML = this.md.render(text);
+				c.appendChild(inner);
+			},
+			onCommit: (newText) => {
+				if (!this.canvas) return;
+				const cur = this.canvas.nodes.find((n) => n.id === id);
+				if (!cur || cur.type !== 'text') return;
+				// Text nodes aren't spread in viewerCanvas (only matched file
+				// nodes are), so canvas.nodes[i] === viewerCanvas.nodes[i] —
+				// one mutation lands on both refs.
+				cur.text = newText;
+				this.onChange(this.canvas);
+			},
+		});
+		this.mountedTextNodes.push(mounted);
 	};
 
 	private markdownComponent = ({

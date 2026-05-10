@@ -48,6 +48,16 @@ export function attachDragHandler(options: DragHandlerOptions): () => void {
 
 	const onPointerDown = (event: Event): void => {
 		const e = event as PointerEvent;
+		const target = e.target as HTMLElement | null;
+		// Form controls (textarea/input) and contenteditable surfaces own the
+		// gesture for cursor positioning and text selection. Don't start drag
+		// tracking, but still stopPropagation so hesprs's pointeract doesn't
+		// claim the event as a stage pan. The browser's native action (focus,
+		// caret, selection) isn't blocked by stopPropagation.
+		if (target && isFormControl(target)) {
+			e.stopPropagation();
+			return;
+		}
 		const overlay = findOverlay(e.target);
 		if (!overlay) return;
 		const node = options.getNode(overlay.id);
@@ -123,6 +133,10 @@ function findOverlay(target: EventTarget | null): HTMLElement | null {
 		el = el.parentElement;
 	}
 	return null;
+}
+
+function isFormControl(el: HTMLElement): boolean {
+	return el.tagName === 'TEXTAREA' || el.tagName === 'INPUT' || el.isContentEditable;
 }
 
 function readScale(): number {
