@@ -60,7 +60,13 @@ function setup(): Harness {
 	return { overlay, node, onMove, onCommit, onCancel, onClick, detach };
 }
 
-function dispatchPointer(target: EventTarget, type: string, clientX = 0, clientY = 0): void {
+function dispatchPointer(
+	target: EventTarget,
+	type: string,
+	clientX = 0,
+	clientY = 0,
+	modifiers: { metaKey?: boolean; ctrlKey?: boolean } = {},
+): void {
 	// happy-dom doesn't ship a PointerEvent constructor, but a MouseEvent
 	// with the right type-string passes cleanly through addEventListener.
 	const event = new MouseEvent(type, {
@@ -68,6 +74,8 @@ function dispatchPointer(target: EventTarget, type: string, clientX = 0, clientY
 		cancelable: true,
 		clientX,
 		clientY,
+		metaKey: modifiers.metaKey ?? false,
+		ctrlKey: modifiers.ctrlKey ?? false,
 	});
 	target.dispatchEvent(event);
 }
@@ -178,6 +186,37 @@ describe('attachDragHandler — form-control filter', () => {
 		dispatchPointer(h.overlay, 'pointermove', 30, 40);
 		dispatchPointer(h.overlay, 'pointerup');
 		expect(h.onCommit).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('attachDragHandler — onClick modifier passthrough', () => {
+	let h: Harness;
+
+	beforeEach(() => {
+		h = setup();
+	});
+
+	afterEach(() => {
+		h.detach();
+		document.body.innerHTML = '';
+	});
+
+	it('reports modifierKey:false on a plain click', () => {
+		dispatchPointer(h.overlay, 'pointerdown', 0, 0);
+		dispatchPointer(h.overlay, 'pointerup');
+		expect(h.onClick).toHaveBeenCalledWith(NODE_ID, { modifierKey: false });
+	});
+
+	it('reports modifierKey:true when Cmd is held', () => {
+		dispatchPointer(h.overlay, 'pointerdown', 0, 0, { metaKey: true });
+		dispatchPointer(h.overlay, 'pointerup');
+		expect(h.onClick).toHaveBeenCalledWith(NODE_ID, { modifierKey: true });
+	});
+
+	it('reports modifierKey:true when Ctrl is held', () => {
+		dispatchPointer(h.overlay, 'pointerdown', 0, 0, { ctrlKey: true });
+		dispatchPointer(h.overlay, 'pointerup');
+		expect(h.onClick).toHaveBeenCalledWith(NODE_ID, { modifierKey: true });
 	});
 });
 

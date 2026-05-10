@@ -17,6 +17,7 @@
 import { JSONCanvasViewer, internal } from 'json-canvas-viewer';
 import type { JSONCanvasViewerInterface } from 'json-canvas-viewer';
 import MarkdownIt from 'markdown-it';
+import { attachDeleteHandler } from './interaction/delete';
 import { attachDragHandler } from './interaction/drag';
 import { attachEdgeGesture } from './interaction/edge';
 import { mountTextNode, type MountedTextNode, type TextEditorFactory } from './interaction/edit';
@@ -57,6 +58,13 @@ export class CanvasView {
 	private viewer: JSONCanvasViewerInterface;
 	private viewerLoaded = false;
 	private canvas: JSONCanvas | null = null;
+	// Node selection. We drive JCV-active ourselves rather than letting hesprs's
+	// OverlayManager.select handle it: drag.ts captures pointerdown on document
+	// and stopPropagation, so pointeract never delivers the click to hesprs's
+	// InteractionHandler — its built-in selection chain is dead in our setup.
+	// Reusing hesprs's JCV-active class means we inherit their selection
+	// styling (border highlight, content pointer-events) for free.
+	private selectedId: string | null = null;
 	// Mirror of `canvas` with synthetic extensions applied to file refs claimed
 	// by `fileRenderer`. Drag mutations are written to both copies so hesprs's
 	// edge-redraw (reading viewerCanvas.nodes[i].x/y) and our save path
@@ -67,6 +75,7 @@ export class CanvasView {
 	private readonly md: MarkdownIt;
 	private readonly nodeComponents: Record<string, unknown>;
 	private readonly detachDrag: () => void;
+	private readonly detachDelete: () => void;
 	private readonly onChange: (canvas: JSONCanvas) => void;
 	private readonly fileRenderer?: FileRenderer;
 	private readonly linkRenderer?: LinkRenderer;
@@ -101,7 +110,11 @@ export class CanvasView {
 			onMove: (id, x, y) => this.handleNodeMoveLive(id, x, y),
 			onCommit: () => this.handleNodeCommit(),
 			onCancel: (id, x, y) => this.handleNodeCancel(id, x, y),
-			onClick: (id) => this.handleNodeClick(id),
+			onClick: (id, modifiers) => this.handleNodeClick(id, modifiers),
+		});
+		this.detachDelete = attachDeleteHandler({
+			root: this.container,
+			onDelete: (id) => this.handleNodeDelete(id),
 		});
 	}
 
@@ -120,6 +133,10 @@ export class CanvasView {
 			this.viewer.dispose();
 			this.viewer = this.createViewer();
 		}
+		// Selection is DOM-attached (JCV-active class on the overlay), and
+		// load() recreates overlays — so the previous selection's class goes
+		// with the old DOM. Clear our tracking to match.
+		this.selectedId = null;
 		this.viewer.load({ canvas: filledForHesprs(this.viewerCanvas) });
 		this.viewerLoaded = true;
 		this.clearMatchedFileLabels();
@@ -151,6 +168,7 @@ export class CanvasView {
 
 	destroy(): void {
 		this.detachEdge();
+		this.detachDelete();
 		this.tearDownTextNodes();
 		this.detachDrag();
 		if (this.rafId !== null) cancelAnimationFrame(this.rafId);
@@ -214,6 +232,20 @@ export class CanvasView {
 		this.onChange(this.canvas);
 	}
 
+	private handleNodeDelete(nodeId: string): void {
+		// Remove the node + cascade any edges that reference it (either side).
+		// Same shape as handleEdgeCommit: mutate canonical state, fire onChange,
+		// trigger a full reload so hesprs picks up the structural change.
+		// load() resets selectedId, so explicit clear isn't needed here.
+		if (!this.canvas) return;
+		this.canvas.nodes = this.canvas.nodes.filter((n) => n.id !== nodeId);
+		this.canvas.edges = this.canvas.edges.filter(
+			(e) => e.fromNode !== nodeId && e.toNode !== nodeId,
+		);
+		this.onChange(this.canvas);
+		this.load(this.canvas);
+	}
+
 	private handleEdgeCommit(edge: CanvasEdge): void {
 		// New edge: append to canonical state, fire onChange so the host saves,
 		// then trigger a full reload so hesprs paints the new edge. Refresh
@@ -227,10 +259,20 @@ export class CanvasView {
 		this.load(this.canvas);
 	}
 
-	private handleNodeClick(id: string): void {
+	private handleNodeClick(id: string, modifiers: { modifierKey: boolean }): void {
 		if (!this.canvas) return;
 		const node = this.canvas.nodes.find((n) => n.id === id);
 		if (!node) return;
+		// Modifier-click is the universal "select" gesture for every node
+		// type. Plain click on file/link routes to openItem (Joplin navigates
+		// away), which would short-circuit a select+delete intent — so we
+		// reserve plain click for opening and put selection on the modifier.
+		// For text/group, plain click is currently a no-op; modifier-click
+		// selects them too, keeping the gesture consistent across types.
+		if (modifiers.modifierKey) {
+			this.selectNode(id);
+			return;
+		}
 		if (node.type === 'file') {
 			const renderer = this.fileRenderer;
 			if (!renderer) return;
@@ -245,6 +287,27 @@ export class CanvasView {
 			this.linkRenderer?.onClick?.(node);
 			return;
 		}
+	}
+
+	private selectNode(id: string | null): void {
+		if (this.selectedId === id) return;
+		if (this.selectedId !== null) {
+			const prev = this.findOverlayElement(this.selectedId);
+			prev?.classList.remove('JCV-active');
+		}
+		this.selectedId = id;
+		if (id !== null) {
+			const next = this.findOverlayElement(id);
+			next?.classList.add('JCV-active');
+		}
+	}
+
+	private findOverlayElement(id: string): HTMLElement | null {
+		// CSS.escape guards against ids containing special chars (per JSON
+		// Canvas spec the id is just a string — could be anything).
+		return this.container.querySelector<HTMLElement>(
+			`.JCV-overlay-container[id="${CSS.escape(id)}"]`,
+		);
 	}
 
 	private scheduleRefresh(): void {

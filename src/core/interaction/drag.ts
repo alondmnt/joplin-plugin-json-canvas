@@ -29,8 +29,13 @@ export interface DragHandlerOptions {
 	 * not handling cancel at all.
 	 */
 	onCancel: (id: string, originalX: number, originalY: number) => void;
-	/** Fires on pointerup when the gesture stayed below the move threshold. */
-	onClick?: (id: string) => void;
+	/**
+	 * Fires on pointerup when the gesture stayed below the move threshold.
+	 * `modifierKey` is true when Cmd (mac) or Ctrl (other) was held during
+	 * pointerdown — the host uses this to distinguish "open" from "select"
+	 * for nodes that route on plain click (file / link).
+	 */
+	onClick?: (id: string, modifiers: { modifierKey: boolean }) => void;
 }
 
 interface DragState {
@@ -41,6 +46,7 @@ interface DragState {
 	startNodeX: number;
 	startNodeY: number;
 	moved: boolean;
+	modifierKey: boolean;
 }
 
 export function attachDragHandler(options: DragHandlerOptions): () => void {
@@ -78,6 +84,9 @@ export function attachDragHandler(options: DragHandlerOptions): () => void {
 			startNodeX: node.x,
 			startNodeY: node.y,
 			moved: false,
+			// metaKey covers Cmd on macOS; ctrlKey covers Ctrl on Win/Linux —
+			// matching the cross-platform "alternate action" convention.
+			modifierKey: e.metaKey || e.ctrlKey,
 		};
 		e.stopPropagation();
 	};
@@ -104,7 +113,7 @@ export function attachDragHandler(options: DragHandlerOptions): () => void {
 			const newY = parseFloat(drag.overlay.style.top);
 			options.onCommit(drag.nodeId, newX, newY);
 		} else {
-			options.onClick?.(drag.nodeId);
+			options.onClick?.(drag.nodeId, { modifierKey: drag.modifierKey });
 		}
 		drag = null;
 	};
