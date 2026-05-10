@@ -89,14 +89,15 @@ body {
 /* Edge-creation handles. One per side, mounted as direct children of the
  * overlay-container by edge.ts. Hidden by default; faded in on overlay
  * hover so the affordance only appears when the user is paying attention
- * to a specific node. */
+ * to a specific node. Sized small (8px) and positioned fully outside the
+ * overlay box so they don't overlap the click-layer. */
 .JCV-edge-handle {
 	position: absolute;
-	width: 12px;
-	height: 12px;
+	width: 8px;
+	height: 8px;
 	border-radius: 50%;
 	background: var(--joplin-url-color, #155dfc);
-	border: 2px solid var(--joplin-background-color, white);
+	border: 1.5px solid var(--joplin-background-color, white);
 	box-sizing: border-box;
 	opacity: 0;
 	pointer-events: auto;
@@ -110,32 +111,24 @@ body {
 }
 
 .JCV-edge-handle-top {
-	top: -6px;
+	top: -8px;
 	left: 50%;
 	transform: translateX(-50%);
 }
 .JCV-edge-handle-right {
 	top: 50%;
-	right: -6px;
+	right: -8px;
 	transform: translateY(-50%);
 }
 .JCV-edge-handle-bottom {
-	bottom: -6px;
+	bottom: -8px;
 	left: 50%;
 	transform: translateX(-50%);
 }
 .JCV-edge-handle-left {
 	top: 50%;
-	left: -6px;
+	left: -8px;
 	transform: translateY(-50%);
-}
-
-/* Hesprs's click-layer fills the overlay-container and intercepts pointer
- * events. The handles sit at -6px (half outside the overlay), but the
- * inner half overlaps the click-layer. Disable click-layer hit-testing
- * while a handle is hovered so pointerdown lands on the handle. */
-.JCV-overlay-container:has(.JCV-edge-handle:hover) .JCV-click-layer {
-	pointer-events: none;
 }
 
 /* In-flight edge preview. Screen-space SVG appended to <body> on gesture
