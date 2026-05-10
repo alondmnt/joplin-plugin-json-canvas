@@ -48,6 +48,7 @@ export interface CanvasViewOptions {
 
 export class CanvasView {
 	private viewer: JSONCanvasViewerInterface;
+	private viewerLoaded = false;
 	private canvas: JSONCanvas | null = null;
 	// Mirror of `canvas` with synthetic extensions applied to file refs claimed
 	// by `fileRenderer`. Drag mutations are written to both copies so hesprs's
@@ -55,28 +56,23 @@ export class CanvasView {
 	// (reading canvas.nodes[i].x/y) stay in sync.
 	private viewerCanvas: JSONCanvas | null = null;
 	private rafId: number | null = null;
+	private readonly container: HTMLElement;
+	private readonly md: MarkdownIt;
+	private readonly nodeComponents: Record<string, unknown>;
 	private readonly detachDrag: () => void;
 	private readonly onChange: (canvas: JSONCanvas) => void;
 	private readonly fileRenderer?: FileRenderer;
 	private readonly linkRenderer?: LinkRenderer;
 
 	constructor(options: CanvasViewOptions) {
+		this.container = options.container;
 		this.fileRenderer = options.fileRenderer;
 		this.linkRenderer = options.linkRenderer;
-		const md = new MarkdownIt({ html: false, breaks: true, linkify: true });
-		const nodeComponents: Record<string, unknown> = {};
-		if (this.fileRenderer) nodeComponents.markdown = this.markdownComponent;
-		if (this.linkRenderer) nodeComponents.link = this.linkComponent;
-		const hasOverrides = Object.keys(nodeComponents).length > 0;
-		this.viewer = new JSONCanvasViewer({
-			container: options.container,
-			parser: (text: string) => md.render(text),
-			// Joplin file refs (`:/<id>`) aren't filesystem paths, so we suppress
-			// hesprs's default `./<basename>` prefixing. Without this, hesprs
-			// would mutate `node.file` on load — a write to our canonical state.
-			noAttachmentRelocation: true,
-			...(hasOverrides ? { nodeComponents } : {}),
-		} as never);
+		this.md = new MarkdownIt({ html: false, breaks: true, linkify: true });
+		this.nodeComponents = {};
+		if (this.fileRenderer) this.nodeComponents.markdown = this.markdownComponent;
+		if (this.linkRenderer) this.nodeComponents.link = this.linkComponent;
+		this.viewer = this.createViewer();
 		this.onChange = options.onChange ?? ((): void => {});
 		this.detachDrag = attachDragHandler({
 			getNode: (id) => this.getNode(id),
@@ -89,8 +85,32 @@ export class CanvasView {
 	load(canvas: JSONCanvas): void {
 		this.canvas = canvas;
 		this.viewerCanvas = this.buildViewerCanvas(canvas);
+		// Each load builds a fresh viewer instead of reusing the existing one.
+		// hesprs's onRestart path leaves stale state across canvas→canvas
+		// reloads (visible as misrendered edges), and the symptoms only clear
+		// when Joplin destroys the iframe (Markdown↔Canvas toggle, or routing
+		// through a non-canvas note). Recreating here matches that cost and
+		// makes every load behave like a first load.
+		if (this.viewerLoaded) {
+			this.viewer.dispose();
+			this.viewer = this.createViewer();
+		}
 		this.viewer.load({ canvas: filledForHesprs(this.viewerCanvas) });
+		this.viewerLoaded = true;
 		this.clearMatchedFileLabels();
+	}
+
+	private createViewer(): JSONCanvasViewerInterface {
+		const hasOverrides = Object.keys(this.nodeComponents).length > 0;
+		return new JSONCanvasViewer({
+			container: this.container,
+			parser: (text: string) => this.md.render(text),
+			// Joplin file refs (`:/<id>`) aren't filesystem paths, so we suppress
+			// hesprs's default `./<basename>` prefixing. Without this, hesprs
+			// would mutate `node.file` on load — a write to our canonical state.
+			noAttachmentRelocation: true,
+			...(hasOverrides ? { nodeComponents: this.nodeComponents } : {}),
+		} as never);
 	}
 
 	destroy(): void {
