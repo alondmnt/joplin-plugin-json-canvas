@@ -78,6 +78,7 @@ export class CanvasView {
 			getNode: (id) => this.getNode(id),
 			onMove: (id, x, y) => this.handleNodeMoveLive(id, x, y),
 			onCommit: () => this.handleNodeCommit(),
+			onCancel: (id, x, y) => this.handleNodeCancel(id, x, y),
 			onClick: (id) => this.handleNodeClick(id),
 		});
 	}
@@ -124,13 +125,27 @@ export class CanvasView {
 		return this.canvas.nodes.find((n) => n.id === id) ?? null;
 	}
 
-	// IMPORTANT: any future mutator on a node (resize, label edit, color, etc.)
-	// must mutate BOTH `this.canvas` and `this.viewerCanvas`. Matched file
-	// nodes hold distinct objects in the two arrays (buildViewerCanvas spreads
-	// them to apply the synth ext); writing to only one will silently desync
-	// the rendered view from saved state. If a second mutator lands, extract
-	// a `mutateNode(id, fn)` helper that handles both — don't keep duplicating
-	// the find-and-write pattern.
+	// Dual-canvas invariant: any node-position mutation must land on BOTH
+	// `this.canvas` (canonical, what we save) AND `this.viewerCanvas` (mirror
+	// with synthetic file extensions; what hesprs reads for redraw). Matched
+	// file nodes hold distinct objects in the two arrays — buildViewerCanvas
+	// spreads them — so writing to only one silently desyncs the view from
+	// saved state. Future mutators (resize, label edit, colour, etc.) should
+	// extend this helper instead of re-writing the find-and-write pair.
+	private setNodePosition(id: string, x: number, y: number): boolean {
+		if (!this.canvas || !this.viewerCanvas) return false;
+		const node = this.canvas.nodes.find((n) => n.id === id);
+		const vnode = this.viewerCanvas.nodes.find((n) => n.id === id);
+		if (!node) return false;
+		node.x = x;
+		node.y = y;
+		if (vnode) {
+			vnode.x = x;
+			vnode.y = y;
+		}
+		return true;
+	}
+
 	private handleNodeMoveLive(id: string, newX: number, newY: number): void {
 		// Hesprs's renderer reads positions from `nodeMap[id].ref.x/y`, where
 		// `ref` points into viewerCanvas.nodes; canonical canvas.nodes is what
@@ -140,16 +155,17 @@ export class CanvasView {
 		//
 		// The overlay div for the dragged node is moved by the drag handler's
 		// style.left/top mutation; we don't touch it here.
-		if (!this.canvas || !this.viewerCanvas) return;
-		const node = this.canvas.nodes.find((n) => n.id === id);
-		const vnode = this.viewerCanvas.nodes.find((n) => n.id === id);
-		if (!node) return;
-		node.x = newX;
-		node.y = newY;
-		if (vnode) {
-			vnode.x = newX;
-			vnode.y = newY;
-		}
+		if (!this.setNodePosition(id, newX, newY)) return;
+		this.scheduleRefresh();
+	}
+
+	private handleNodeCancel(id: string, originalX: number, originalY: number): void {
+		// OS interrupted the drag (touch interruption, modal, focus loss).
+		// Drag handler already reverted the overlay div; we revert canonical
+		// + viewer state and trigger one refresh so edges snap back. No
+		// onChange fires — the cancelled gesture's intermediate moves are
+		// discarded.
+		if (!this.setNodePosition(id, originalX, originalY)) return;
 		this.scheduleRefresh();
 	}
 

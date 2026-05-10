@@ -20,6 +20,15 @@ export interface DragHandlerOptions {
 	onMove: (id: string, newX: number, newY: number) => void;
 	/** Fires once on drag-end. Use for committing canonical state (save). */
 	onCommit: (id: string, newX: number, newY: number) => void;
+	/**
+	 * Fires when the OS interrupts the gesture mid-drag (touch interruption,
+	 * modal, focus loss). Caller must revert canonical state to (originalX,
+	 * originalY) and trigger a refresh — no onChange fires for the cancel.
+	 * Required, not optional: without it, the overlay is reverted by us but
+	 * canonical state stays at the moved position, leaving worse drift than
+	 * not handling cancel at all.
+	 */
+	onCancel: (id: string, originalX: number, originalY: number) => void;
 	/** Fires on pointerup when the gesture stayed below the move threshold. */
 	onClick?: (id: string) => void;
 }
@@ -82,15 +91,28 @@ export function attachDragHandler(options: DragHandlerOptions): () => void {
 		drag = null;
 	};
 
+	const onPointerCancel = (): void => {
+		if (!drag) return;
+		// Revert the overlay we'd been mutating directly, then ask the host
+		// to revert canonical x/y. Skipping onCommit means no save fires for
+		// the discarded gesture.
+		drag.overlay.style.left = `${drag.startNodeX}px`;
+		drag.overlay.style.top = `${drag.startNodeY}px`;
+		options.onCancel(drag.nodeId, drag.startNodeX, drag.startNodeY);
+		drag = null;
+	};
+
 	const opts = { capture: true };
 	document.addEventListener('pointerdown', onPointerDown, opts);
 	document.addEventListener('pointermove', onPointerMove, opts);
 	document.addEventListener('pointerup', onPointerUp, opts);
+	document.addEventListener('pointercancel', onPointerCancel, opts);
 
 	return (): void => {
 		document.removeEventListener('pointerdown', onPointerDown, opts);
 		document.removeEventListener('pointermove', onPointerMove, opts);
 		document.removeEventListener('pointerup', onPointerUp, opts);
+		document.removeEventListener('pointercancel', onPointerCancel, opts);
 	};
 }
 
